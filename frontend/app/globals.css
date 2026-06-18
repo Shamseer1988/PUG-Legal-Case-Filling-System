@@ -1,0 +1,26 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: 247 248 252;
+    --color-fg: 28 34 51;
+    --color-muted: 91 100 120;
+    --color-border: 227 231 240;
+    --color-card: 255 255 255;
+  }
+  .dark {
+    --color-bg: 11 16 32;
+    --color-fg: 232 236 248;
+    --color-muted: 168 177 199;
+    --color-border: 42 51 88;
+    --color-card: 18 26 51;
+  }
+  html,
+  body {
+    @apply min-h-screen;
+    background: rgb(var(--color-bg));
+    color: rgb(var(--color-fg));
+  }
+}

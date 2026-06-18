@@ -336,9 +336,10 @@
     <div class="card">
       <h4>DevOps</h4>
       <ul>
-        <li>Docker &amp; docker-compose</li>
+        <li>Direct local dev (PugFin-style)</li>
+        <li>systemd units + nginx (at deploy time)</li>
+        <li>Docker / docker-compose files kept ready for future cloud deploys</li>
         <li>GitHub Actions CI</li>
-        <li>Nginx reverse proxy + HTTPS</li>
         <li>Sentry / Loguru</li>
         <li>pgBackRest scheduled DB backups</li>
       </ul>
@@ -780,12 +781,14 @@ PUG-Legal-Case-Filling-System/
   <div class="phase">
     <header><span class="badge gold">Phase 0</span><strong>Foundation &amp; Scaffolding</strong><span class="tokens">≈ 1 session</span></header>
     <ul>
-      <li>Mono-repo layout (backend, frontend, infra, docs)</li>
-      <li>docker-compose: Postgres, Redis, MinIO, backend, frontend, nginx</li>
+      <li>Mono-repo layout (backend, frontend, infra, scripts, docs)</li>
+      <li>Direct local dev (PugFin-style): local Postgres, local Redis, <strong>local filesystem storage</strong> at <code>storage/</code> (S3 deferred to Settings/Phase 10)</li>
       <li>FastAPI skeleton + health endpoint, structured logging, env config</li>
       <li>Next.js 14 + Tailwind + shadcn/ui base, light/dark theme tokens, PUG brand colors</li>
       <li>Alembic baseline, base SQLAlchemy models, seed script</li>
       <li>Pre-commit, ruff, eslint, prettier, GitHub Actions CI</li>
+      <li><strong>Docker / docker-compose files included but optional</strong> — kept ready for future cloud deploy; not used for local dev</li>
+      <li>systemd unit templates + nginx config will be added in Phase 12 (deployment)</li>
       <li>README + this phase plan checked in</li>
     </ul>
   </div>

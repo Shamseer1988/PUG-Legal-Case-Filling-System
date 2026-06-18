@@ -1,0 +1,53 @@
+[project]
+name = "pug-legal-backend"
+version = "0.1.0"
+description = "PUG Legal Case Control System — Backend (FastAPI)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "pydantic>=2.9.0",
+    "pydantic-settings>=2.6.0",
+    "sqlalchemy>=2.0.35",
+    "alembic>=1.13.3",
+    "psycopg[binary]>=3.2.3",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[argon2]>=1.7.4",
+    "python-multipart>=0.0.12",
+    "redis>=5.1.1",
+    "celery>=5.4.0",
+    "apscheduler>=3.10.4",
+    "jinja2>=3.1.4",
+    "loguru>=0.7.2",
+    "httpx>=0.27.2",
+    "email-validator>=2.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.3",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.7.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.1",
+    "httpx>=0.27.2",
+]
+reports = [
+    "openpyxl>=3.1.5",
+    "xlsxwriter>=3.2.0",
+    "weasyprint>=63.0",
+    "reportlab>=4.2.5",
+    "pillow>=11.0.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "SIM"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
