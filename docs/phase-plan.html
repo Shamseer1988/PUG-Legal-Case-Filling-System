@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>PUG Legal Case Control System — Phase Plan &amp; App Structure</title>
+<style>
+  :root {
+    --gold: #c9a14a;
+    --gold-dark: #8a6b22;
+    --bg: #0b1020;
+    --bg-soft: #121a33;
+    --panel: #ffffff;
+    --panel-soft: #f7f8fc;
+    --text: #1c2233;
+    --muted: #5b6478;
+    --line: #e3e7f0;
+    --accent: #1f4ed8;
+    --success: #137a3a;
+    --warn: #b8860b;
+    --danger: #b3261e;
+    --radius: 12px;
+    --shadow: 0 6px 24px rgba(15, 23, 42, 0.08);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --panel: #121a33;
+      --panel-soft: #182142;
+      --text: #e8ecf8;
+      --muted: #a8b1c7;
+      --line: #2a3358;
+    }
+    body { background: var(--bg); }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    color: var(--text);
+    background: linear-gradient(180deg, #f3f5fb 0%, #eef1f9 100%);
+    line-height: 1.55;
+  }
+  header.brand {
+    background: linear-gradient(135deg, #0b1020 0%, #1a234a 60%, #2a3669 100%);
+    color: #fff;
+    padding: 28px 40px;
+    border-bottom: 4px solid var(--gold);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+  }
+  header.brand .logo {
+    width: 64px; height: 64px;
+    border-radius: 50%;
+    background: var(--gold);
+    color: #0b1020;
+    font-weight: 800;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 24px;
+    box-shadow: 0 0 0 4px rgba(201, 161, 74, 0.25);
+  }
+  header.brand h1 {
+    margin: 0;
+    font-size: 22px;
+    letter-spacing: 0.4px;
+  }
+  header.brand small {
+    color: var(--gold);
+    letter-spacing: 1px;
+    font-weight: 600;
+    text-transform: uppercase;
+    font-size: 11px;
+  }
+  header.brand .meta {
+    margin-left: auto;
+    font-size: 12px;
+    color: #cbd2e0;
+    text-align: right;
+  }
+  nav.toc {
+    background: var(--panel);
+    border-bottom: 1px solid var(--line);
+    padding: 12px 40px;
+    position: sticky; top: 0; z-index: 10;
+    box-shadow: var(--shadow);
+  }
+  nav.toc a {
+    color: var(--text);
+    text-decoration: none;
+    margin-right: 14px;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 10px;
+    border-radius: 6px;
+  }
+  nav.toc a:hover { background: var(--panel-soft); color: var(--accent); }
+  main {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 28px 24px 80px;
+  }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 24px 28px;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow);
+  }
+  h2 {
+    margin: 0 0 6px;
+    font-size: 20px;
+    border-left: 4px solid var(--gold);
+    padding-left: 10px;
+  }
+  h3 {
+    margin: 18px 0 8px;
+    font-size: 16px;
+    color: var(--accent);
+  }
+  h4 { margin: 14px 0 6px; font-size: 14px; color: var(--gold-dark); }
+  p, li { font-size: 14px; }
+  ul, ol { padding-left: 22px; }
+  ul li, ol li { margin-bottom: 4px; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0;
+    font-size: 13px;
+  }
+  th, td {
+    border: 1px solid var(--line);
+    padding: 8px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: var(--panel-soft);
+    color: var(--text);
+    font-weight: 700;
+  }
+  tr:nth-child(even) td { background: rgba(201, 161, 74, 0.04); }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+  .card {
+    border: 1px solid var(--line);
+    background: var(--panel-soft);
+    border-radius: 10px;
+    padding: 12px 14px;
+  }
+  .card h4 { margin-top: 0; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+  }
+  .badge.gold { background: rgba(201, 161, 74, 0.18); color: var(--gold-dark); border: 1px solid rgba(201, 161, 74, 0.4); }
+  .badge.blue { background: rgba(31, 78, 216, 0.12); color: var(--accent); border: 1px solid rgba(31, 78, 216, 0.3); }
+  .badge.green { background: rgba(19, 122, 58, 0.12); color: var(--success); border: 1px solid rgba(19, 122, 58, 0.3); }
+  .badge.warn { background: rgba(184, 134, 11, 0.14); color: var(--warn); border: 1px solid rgba(184, 134, 11, 0.3); }
+  .badge.red { background: rgba(179, 38, 30, 0.12); color: var(--danger); border: 1px solid rgba(179, 38, 30, 0.3); }
+
+  .phase {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    margin: 12px 0;
+    background: var(--panel-soft);
+  }
+  .phase header {
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .phase header strong { font-size: 15px; }
+  .phase .tokens {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .flow {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .flow .step {
+    background: linear-gradient(135deg, #fff 0%, #f7f8fc 100%);
+    border: 1px solid var(--line);
+    border-left: 4px solid var(--gold);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+  .flow .step strong { display: block; font-size: 13px; margin-bottom: 4px; }
+  code, pre {
+    font-family: 'JetBrains Mono', Consolas, monospace;
+    background: #0b1020;
+    color: #d6e4ff;
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 12px;
+  }
+  pre { padding: 12px 14px; overflow: auto; line-height: 1.5; }
+  .legend {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px;
+  }
+  footer.brand-foot {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    padding: 20px;
+    border-top: 1px solid var(--line);
+    background: var(--panel);
+  }
+  @media print {
+    nav.toc { display: none; }
+    body { background: #fff; }
+    section { box-shadow: none; page-break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+
+<header class="brand">
+  <div class="logo">PUG</div>
+  <div>
+    <small>Paris United Group Holding</small>
+    <h1>Legal Case Control System — Phase Plan &amp; Full App Structure</h1>
+  </div>
+  <div class="meta">
+    Version 1.0 &middot; Draft<br/>
+    Repo: <code>PUG-Legal-Case-Filling-System</code>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#overview">Overview</a>
+  <a href="#stack">Tech Stack</a>
+  <a href="#features">Features</a>
+  <a href="#structure">App Structure</a>
+  <a href="#data">Data Model</a>
+  <a href="#flow">Workflow</a>
+  <a href="#roles">Roles</a>
+  <a href="#admin">Admin Menu</a>
+  <a href="#phases">Phase Plan</a>
+  <a href="#deliverables">Deliverables</a>
+</nav>
+
+<main>
+
+<section id="overview">
+  <h2>1. Overview</h2>
+  <p>
+    The <strong>PUG Legal Case Control System</strong> centralizes the end-to-end legal case lifecycle
+    for Paris United Group's multi-branch divisions — from case intake at division accounts, audit
+    review, FM/ED/MD/Chairman approvals, court filing by the lawyer, hearing tracking, expense
+    management and final closure — with role-based access, branded notifications, dashboards and
+    full audit trails.
+  </p>
+  <p>
+    This document is the canonical phase-by-phase delivery plan. Phases are sized to fit within a
+    single Claude Code 5-hour token window so work does not get interrupted mid-feature. Coding
+    begins only after the user types <strong><code>start Phase 0</code></strong>.
+  </p>
+  <div class="legend">
+    <span class="badge gold">Branded</span>
+    <span class="badge blue">Role-Based</span>
+    <span class="badge green">Auditable</span>
+    <span class="badge warn">Notification-Driven</span>
+    <span class="badge red">Approval Workflow</span>
+  </div>
+</section>
+
+<section id="stack">
+  <h2>2. Technology Stack</h2>
+  <div class="grid">
+    <div class="card">
+      <h4>Backend</h4>
+      <ul>
+        <li>Python 3.12</li>
+        <li>FastAPI (async REST + OpenAPI)</li>
+        <li>SQLAlchemy 2.x (ORM) + Alembic migrations</li>
+        <li>Pydantic v2 for validation</li>
+        <li>Celery + Redis (jobs &amp; schedules)</li>
+        <li>APScheduler for cron reports</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Frontend</h4>
+      <ul>
+        <li>Next.js 14 (App Router) + TypeScript</li>
+        <li>React 18, TanStack Query</li>
+        <li>Tailwind CSS + shadcn/ui</li>
+        <li>Recharts / ApexCharts</li>
+        <li>Zustand for client state</li>
+        <li>Light / Dark mode tokens</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Database &amp; Cache</h4>
+      <ul>
+        <li>PostgreSQL 16</li>
+        <li>Redis 7 (cache, queue, sessions)</li>
+        <li>S3-compatible object storage for case docs</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Documents &amp; Reports</h4>
+      <ul>
+        <li>WeasyPrint / ReportLab (PDF)</li>
+        <li>OpenPyXL + XlsxWriter (Excel)</li>
+        <li>Jinja2 branded templates</li>
+        <li>Pillow for image &amp; signature processing</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Security &amp; Auth</h4>
+      <ul>
+        <li>JWT (access + refresh)</li>
+        <li>RBAC + division scoping</li>
+        <li>Argon2 password hashing</li>
+        <li>2FA via TOTP (optional)</li>
+        <li>Rate-limit &amp; CSRF</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>DevOps</h4>
+      <ul>
+        <li>Docker &amp; docker-compose</li>
+        <li>GitHub Actions CI</li>
+        <li>Nginx reverse proxy + HTTPS</li>
+        <li>Sentry / Loguru</li>
+        <li>pgBackRest scheduled DB backups</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <h2>3. Full Feature List</h2>
+
+  <h3>3.1 Core Modules</h3>
+  <ul>
+    <li>Legal Case Entry Form (multi-cheque, attachments, signatories)</li>
+    <li>Multi-stage approval workflow (Accountant → Manager → Auditor → FM → ED → MD/Chairman → Lawyer)</li>
+    <li>Court filing module with Police Case No., Court Case No., filed date, govt acknowledgment</li>
+    <li>Hearing tracker (next hearing date/time/location, command updates, attachments)</li>
+    <li>Lawyer cash-request &amp; expense ledger per case</li>
+    <li>Case closure with multi-status (Closed / Rejected / Fund Received / Pending / Hold / Signatory Out of Country)</li>
+  </ul>
+
+  <h3>3.2 Reporting &amp; Export</h3>
+  <ul>
+    <li><span class="badge blue">Export</span> <strong>Excel export</strong> on every list/report (XLSX with branded header, frozen rows)</li>
+    <li><span class="badge blue">Export</span> <strong>PDF export</strong> with PUG branded header/footer, watermarks, page numbers</li>
+    <li><span class="badge blue">Print</span> <strong>Direct browser print</strong> with print-optimized CSS (corporate layout)</li>
+    <li>Case-flow chart printable per case (visual lifecycle)</li>
+    <li>Detailed case report including all attachments preview</li>
+    <li>Aging report, recovery report, division-wise summary, status pivot</li>
+  </ul>
+
+  <h3>3.3 Backup &amp; Restore <span class="badge gold">PugFin Parity</span></h3>
+  <ul>
+    <li>Same engine as PugFin App: on-demand &amp; scheduled DB dumps (<code>pg_dump</code> + custom format)</li>
+    <li>Attachment archive (tar.gz of object storage namespace)</li>
+    <li>Encrypted backups (AES-256 with system key) stored locally + optional S3 offsite</li>
+    <li>Retention policy (daily 7 / weekly 4 / monthly 12)</li>
+    <li>Restore wizard with pre-restore safety snapshot</li>
+    <li>Backup integrity check (checksum + test-restore job)</li>
+    <li>Audit log entry for every backup &amp; restore action</li>
+  </ul>
+
+  <h3>3.4 Email Log</h3>
+  <ul>
+    <li>Every outgoing email recorded: To/CC/BCC, subject, template, status (Queued/Sent/Bounced/Failed), timestamp, attempts, related case &amp; user</li>
+    <li>Searchable, filterable; preview rendered email (HTML) and download attachments</li>
+    <li>Resend / cancel queued mails from UI</li>
+    <li>SMTP failure alerting</li>
+  </ul>
+
+  <h3>3.5 Audit Log</h3>
+  <ul>
+    <li>Append-only log of every create / update / delete / approve / reject / status-change / login / failed-login / permission change</li>
+    <li>Captures: actor, role, IP, user-agent, before-value, after-value, entity, entity ID, reason</li>
+    <li>Filter by user, module, division, date range; export to Excel/PDF</li>
+    <li>Tamper-evident chain (row hash linked to previous row)</li>
+  </ul>
+
+  <h3>3.6 Scheduled Reporting via Email <span class="badge warn">Branded</span></h3>
+  <ul>
+    <li>Build any report → save as scheduled job (daily/weekly/monthly/cron expression)</li>
+    <li>Choose recipients (users, roles, custom emails), CC, BCC</li>
+    <li>Choose format(s): PDF, Excel, inline HTML summary</li>
+    <li>Branded email template (PUG logo, gold/navy theme, footer signature block)</li>
+    <li>Per-schedule run history, last-run status, next-run countdown</li>
+    <li>Pause / resume / run-now controls</li>
+  </ul>
+
+  <h3>3.7 System Settings (under Admin Menu)</h3>
+  <div class="grid">
+    <div class="card">
+      <h4>Company &amp; Branding</h4>
+      <ul>
+        <li>Company name, address, TRN, logo (light/dark)</li>
+        <li>Print header / footer template</li>
+        <li>Email signature block</li>
+        <li>Theme primary (gold) &amp; secondary colors</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Email (SMTP)</h4>
+      <ul>
+        <li>Host, port, TLS/SSL, username, password</li>
+        <li>From name &amp; from address</li>
+        <li>Test-send button</li>
+        <li>Bounce webhook URL</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>AI Configuration</h4>
+      <ul>
+        <li>Provider (Anthropic Claude / OpenAI)</li>
+        <li>Model ID &amp; API key (encrypted)</li>
+        <li>Use-cases: case summary, hearing note polish, OCR of attachments, status suggestion</li>
+        <li>Token cap per day &amp; per user</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Numbering &amp; Sequences</h4>
+      <ul>
+        <li>Case No. prefix / padding / yearly reset</li>
+        <li>Division code, customer code, salesman code</li>
+        <li>Cheque entry sequence</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Workflow Rules</h4>
+      <ul>
+        <li>Enable/disable each approval step</li>
+        <li>Required signatories per case type</li>
+        <li>Auto-escalation SLA (hours)</li>
+        <li>Notification routing matrix</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Security</h4>
+      <ul>
+        <li>Password policy &amp; expiry</li>
+        <li>2FA enforce per role</li>
+        <li>Session timeout</li>
+        <li>IP allow-list</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Backup &amp; Restore</h4>
+      <ul>
+        <li>Schedule cron, retention policy</li>
+        <li>Storage target (local / S3 / both)</li>
+        <li>Encryption key rotation</li>
+        <li>Trigger backup / open restore wizard</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Notifications</h4>
+      <ul>
+        <li>Channel toggles (email / in-app / both)</li>
+        <li>Template editor (per event)</li>
+        <li>Digest cadence</li>
+        <li>Quiet hours</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Appearance</h4>
+      <ul>
+        <li>Default theme (light / dark / system)</li>
+        <li>Public landing page light/dark switch</li>
+        <li>Date &amp; number formats</li>
+        <li>Default language</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Integrations</h4>
+      <ul>
+        <li>S3 / MinIO credentials</li>
+        <li>SMS gateway (optional)</li>
+        <li>Webhook subscribers</li>
+        <li>Govt court system import (future)</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Maintenance</h4>
+      <ul>
+        <li>Toggle maintenance mode</li>
+        <li>Banner message</li>
+        <li>Cache flush &amp; reindex</li>
+        <li>License / health check</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>Data Management</h4>
+      <ul>
+        <li>Bulk import CSV (customers, cheques)</li>
+        <li>Bulk export</li>
+        <li>Soft-delete recycle bin</li>
+        <li>Purge old logs policy</li>
+      </ul>
+    </div>
+  </div>
+
+  <h3>3.8 Dashboards</h3>
+  <ul>
+    <li>Executive dashboard: total cases, value at stake, recovered, pending, top divisions, monthly trend</li>
+    <li>Hearing calendar (next 30 days)</li>
+    <li>Status heatmap (division × status)</li>
+    <li>Lawyer workload &amp; expense burn-rate</li>
+    <li>Alerts panel (SLA breach, missing docs, signatory pending)</li>
+  </ul>
+
+  <h3>3.9 Notifications</h3>
+  <ul>
+    <li>Branded HTML emails (PUG gold &amp; navy)</li>
+    <li>In-app bell with unread badge</li>
+    <li>Rule engine: event → audience → channel</li>
+    <li>Snooze &amp; mute</li>
+  </ul>
+</section>
+
+<section id="structure">
+  <h2>4. Full Application Structure</h2>
+
+  <h3>4.1 Menu Tree</h3>
+<pre>
+PUG Legal Case Control System
+├── Dashboard
+│   ├── Executive Overview
+│   ├── My Pending Tasks
+│   ├── Hearing Calendar
+│   └── Alerts
+│
+├── Transactions
+│   ├── New Case (Legal Entry Form)
+│   ├── My Cases
+│   ├── All Cases (role-scoped)
+│   ├── Approval Inbox
+│   ├── Court Filing
+│   ├── Hearings &amp; Updates
+│   ├── Lawyer Cash Requests
+│   ├── Case Expenses
+│   └── Status &amp; Closure
+│
+├── Masters
+│   ├── Divisions
+│   ├── Banks
+│   ├── Customers
+│   ├── Salesmen
+│   ├── Lawyers / Law Firms
+│   ├── Case Types
+│   └── Cheque Types
+│
+├── Reports
+│   ├── Case Register
+│   ├── Status Summary
+│   ├── Aging Report
+│   ├── Recovery Report
+│   ├── Division-wise Summary
+│   ├── Hearing Schedule
+│   ├── Expense Report
+│   ├── Audit Trail Report
+│   └── Custom Report Builder
+│
+├── Scheduled Reports
+│   ├── My Schedules
+│   ├── New Schedule
+│   └── Run History
+│
+└── Admin  <span class="badge gold">Admin Only</span>
+    ├── Users
+    ├── Roles &amp; Permissions
+    ├── User-Division Mapping
+    ├── Workflow Designer
+    ├── Notification Templates
+    ├── Email Log
+    ├── Audit Log
+    ├── Backup &amp; Restore
+    ├── System Settings
+    │   ├── Company &amp; Branding
+    │   ├── SMTP / Email
+    │   ├── AI Configuration
+    │   ├── Numbering &amp; Sequences
+    │   ├── Workflow Rules
+    │   ├── Security
+    │   ├── Backup Policy
+    │   ├── Notifications
+    │   ├── Appearance (Light/Dark)
+    │   ├── Integrations
+    │   ├── Data Management
+    │   └── Maintenance
+    └── Health &amp; Diagnostics
+</pre>
+
+  <h3>4.2 Repository Layout</h3>
+<pre>
+PUG-Legal-Case-Filling-System/
+├── backend/
+│   ├── app/
+│   │   ├── api/                # FastAPI routers
+│   │   │   ├── v1/
+│   │   │   │   ├── auth.py
+│   │   │   │   ├── cases.py
+│   │   │   │   ├── masters.py
+│   │   │   │   ├── workflow.py
+│   │   │   │   ├── hearings.py
+│   │   │   │   ├── expenses.py
+│   │   │   │   ├── reports.py
+│   │   │   │   ├── schedules.py
+│   │   │   │   ├── exports.py
+│   │   │   │   ├── backup.py
+│   │   │   │   ├── audit.py
+│   │   │   │   ├── email_log.py
+│   │   │   │   ├── settings.py
+│   │   │   │   └── users.py
+│   │   ├── core/               # config, security, deps
+│   │   ├── db/                 # session, base, init
+│   │   ├── models/             # SQLAlchemy models
+│   │   ├── schemas/            # Pydantic schemas
+│   │   ├── services/           # business logic
+│   │   │   ├── workflow_engine.py
+│   │   │   ├── notification.py
+│   │   │   ├── pdf_renderer.py
+│   │   │   ├── excel_renderer.py
+│   │   │   ├── backup_service.py
+│   │   │   ├── audit_service.py
+│   │   │   └── scheduler_service.py
+│   │   ├── templates/          # Jinja2 (email, PDF)
+│   │   ├── workers/            # Celery tasks
+│   │   └── main.py
+│   ├── alembic/
+│   ├── tests/
+│   └── pyproject.toml
+│
+├── frontend/
+│   ├── app/                    # Next.js App Router
+│   │   ├── (auth)/login
+│   │   ├── (app)/dashboard
+│   │   ├── (app)/cases
+│   │   ├── (app)/masters
+│   │   ├── (app)/reports
+│   │   ├── (app)/schedules
+│   │   └── (app)/admin
+│   ├── components/
+│   ├── lib/
+│   ├── hooks/
+│   ├── styles/
+│   └── package.json
+│
+├── infra/
+│   ├── docker-compose.yml
+│   ├── nginx.conf
+│   └── backup/
+│
+├── docs/
+│   ├── phase-plan.html         &lt;-- this file
+│   ├── api/
+│   └── runbooks/
+│
+└── assets/                     # logos, sample form, SOP
+</pre>
+</section>
+
+<section id="data">
+  <h2>5. Data Model (High-Level)</h2>
+  <table>
+    <tr><th>Entity</th><th>Key Fields</th><th>Relations</th></tr>
+    <tr><td>Division</td><td>code, name, address, emails (acct/mgr/sales)</td><td>has many Users, Cases, Customers</td></tr>
+    <tr><td>User</td><td>email, password_hash, role, status, 2FA</td><td>belongs to Roles, mapped to Divisions</td></tr>
+    <tr><td>Role</td><td>name, permissions (JSON)</td><td>many-to-many Users</td></tr>
+    <tr><td>Customer</td><td>code, name, type, division_id, salesman_id</td><td>has many Cases</td></tr>
+    <tr><td>Bank</td><td>code, name</td><td>referenced by Cheques</td></tr>
+    <tr><td>Salesman</td><td>code, name, email, division_id</td><td>belongs to Division</td></tr>
+    <tr><td>Lawyer</td><td>name, firm, contact</td><td>assigned to Cases</td></tr>
+    <tr><td>Case</td><td>case_no, customer_id, division_id, due_amount, legal_amount, deposit_date, bank_code, type (Criminal/Civil/Both), status, current_stage</td><td>has many Cheques, Attachments, ApprovalSteps, Hearings, Expenses, StatusUpdates</td></tr>
+    <tr><td>Cheque</td><td>case_id, number, bank, amount, type, bounce_reason</td><td>belongs to Case</td></tr>
+    <tr><td>ApprovalStep</td><td>case_id, role, user_id, action, comment, signed_at</td><td>belongs to Case</td></tr>
+    <tr><td>CourtFiling</td><td>case_id, police_no, court_no, filed_date, acknowledgment_file</td><td>belongs to Case</td></tr>
+    <tr><td>Hearing</td><td>case_id, date_time, location, command, next_date, attachment</td><td>belongs to Case</td></tr>
+    <tr><td>Expense / CashRequest</td><td>case_id, amount, requested_by, approved_by, paid_by, receipt</td><td>belongs to Case</td></tr>
+    <tr><td>Attachment</td><td>entity_type, entity_id, file_url, mime, size, uploaded_by</td><td>polymorphic</td></tr>
+    <tr><td>EmailLog</td><td>to, cc, bcc, subject, template, status, attempts, body_url</td><td>linked to Case &amp; User</td></tr>
+    <tr><td>AuditLog</td><td>actor_id, action, entity, entity_id, before, after, ip, ua, hash, prev_hash</td><td>append-only</td></tr>
+    <tr><td>ScheduledReport</td><td>name, report_key, params, cron, recipients, formats, last_run, next_run, status</td><td>has many RunHistory</td></tr>
+    <tr><td>BackupJob</td><td>type, started_at, finished_at, size, checksum, storage_path, status</td><td>—</td></tr>
+    <tr><td>SettingsKV</td><td>key, value (encrypted if sensitive), updated_by</td><td>—</td></tr>
+    <tr><td>Notification</td><td>user_id, type, title, body, link, read_at</td><td>—</td></tr>
+  </table>
+</section>
+
+<section id="flow">
+  <h2>6. End-to-End Workflow</h2>
+  <div class="flow">
+    <div class="step"><strong>1. Accountant</strong>Fill Legal Entry Form, attach docs, submit, print</div>
+    <div class="step"><strong>2. Sales Manager</strong>Review &amp; sign</div>
+    <div class="step"><strong>3. Division Manager</strong>Approve, send physical docs to HO</div>
+    <div class="step"><strong>4. Accountant</strong>Status: Sent to Head Office</div>
+    <div class="step"><strong>5. HO Audit</strong>Receive physical → Application Received</div>
+    <div class="step"><strong>6. Auditor</strong>Verify vs accounting system → Handover to FM</div>
+    <div class="step"><strong>7. FM</strong>Review, request clarification or forward to ED</div>
+    <div class="step"><strong>8. ED</strong>Sign physical, status update</div>
+    <div class="step"><strong>9. Chairman / MD</strong>Final approval</div>
+    <div class="step"><strong>10. FM → Legal</strong>Hand over with command</div>
+    <div class="step"><strong>11. Lawyer</strong>File case in govt system, upload Acknowledgement, Police No., Court No.</div>
+    <div class="step"><strong>12. Lawyer / FM</strong>Hearing updates, next dates, attachments</div>
+    <div class="step"><strong>13. Lawyer</strong>Cash request → FM approve → Accountant pay → Receipt</div>
+    <div class="step"><strong>14. FM</strong>Final status: Closed / Rejected / Fund Received / Hold / Pending</div>
+  </div>
+</section>
+
+<section id="roles">
+  <h2>7. Roles &amp; Permissions Matrix</h2>
+  <table>
+    <tr>
+      <th>Capability</th>
+      <th>Accountant</th><th>Sales Mgr</th><th>Div Mgr</th><th>Auditor</th>
+      <th>FM</th><th>ED</th><th>MD/Chair</th><th>Lawyer</th><th>Admin</th>
+    </tr>
+    <tr><td>Create Case</td><td>✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>✓</td></tr>
+    <tr><td>Approve at stage</td><td></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td></td><td>✓</td></tr>
+    <tr><td>Court Filing entry</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>✓</td><td>✓</td></tr>
+    <tr><td>Hearing updates</td><td></td><td></td><td></td><td></td><td>✓</td><td></td><td></td><td>✓</td><td>✓</td></tr>
+    <tr><td>Cash request</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>✓</td><td>✓</td></tr>
+    <tr><td>Approve cash</td><td></td><td></td><td></td><td></td><td>✓</td><td></td><td></td><td></td><td>✓</td></tr>
+    <tr><td>Pay cash</td><td>✓</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>✓</td></tr>
+    <tr><td>Reports (own div)</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td></tr>
+    <tr><td>Reports (all divs)</td><td></td><td></td><td></td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓*</td><td>✓</td></tr>
+    <tr><td>Backup / Restore</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>✓</td></tr>
+    <tr><td>System Settings</td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td>✓</td></tr>
+    <tr><td>Audit / Email Log</td><td></td><td></td><td></td><td>view</td><td>view</td><td></td><td></td><td></td><td>✓</td></tr>
+  </table>
+  <p style="font-size:12px;color:var(--muted)">* Lawyer scope is configurable per division mapping.</p>
+</section>
+
+<section id="admin">
+  <h2>8. Admin Menu (Detail)</h2>
+  <p>
+    Every administrative capability is consolidated under a single <strong>Admin</strong> menu so
+    operators have one place for governance, security and configuration.
+  </p>
+  <table>
+    <tr><th>Sub-Menu</th><th>Purpose</th><th>Key Actions</th></tr>
+    <tr><td>Users</td><td>Manage accounts</td><td>Create, edit, deactivate, reset password, force 2FA</td></tr>
+    <tr><td>Roles &amp; Permissions</td><td>RBAC</td><td>Create role, assign granular permissions, clone</td></tr>
+    <tr><td>User-Division Mapping</td><td>Scope access</td><td>Map single or multi-division per user</td></tr>
+    <tr><td>Workflow Designer</td><td>Edit approval chain</td><td>Reorder stages, set required signatories, SLA</td></tr>
+    <tr><td>Notification Templates</td><td>Email &amp; in-app</td><td>WYSIWYG branded editor, variables, preview, test-send</td></tr>
+    <tr><td>Email Log</td><td>Outbound visibility</td><td>Filter, preview, resend, attachments</td></tr>
+    <tr><td>Audit Log</td><td>All actions</td><td>Filter, diff view, export, verify chain</td></tr>
+    <tr><td>Backup &amp; Restore</td><td>Same as PugFin</td><td>On-demand backup, restore wizard, schedule, retention, offsite</td></tr>
+    <tr><td>Scheduled Reports</td><td>Cron emails</td><td>Create / pause / run-now, branded HTML + PDF/Excel</td></tr>
+    <tr><td>System Settings</td><td>Global config</td><td>All 12 setting groups listed in §3.7</td></tr>
+    <tr><td>Health &amp; Diagnostics</td><td>Ops</td><td>DB ping, Redis ping, queue depth, last backup, version</td></tr>
+  </table>
+</section>
+
+<section id="phases">
+  <h2>9. Phase-by-Phase Development Plan</h2>
+  <p style="color:var(--muted);font-size:13px">
+    Each phase is scoped to fit within ~one Claude Code 5-hour token window. Phases are checkpointed
+    with commits so resuming is safe. Coding starts only on <code>start Phase 0</code>.
+  </p>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 0</span><strong>Foundation &amp; Scaffolding</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Mono-repo layout (backend, frontend, infra, docs)</li>
+      <li>docker-compose: Postgres, Redis, MinIO, backend, frontend, nginx</li>
+      <li>FastAPI skeleton + health endpoint, structured logging, env config</li>
+      <li>Next.js 14 + Tailwind + shadcn/ui base, light/dark theme tokens, PUG brand colors</li>
+      <li>Alembic baseline, base SQLAlchemy models, seed script</li>
+      <li>Pre-commit, ruff, eslint, prettier, GitHub Actions CI</li>
+      <li>README + this phase plan checked in</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 1</span><strong>Auth, RBAC, Masters</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>JWT auth (access + refresh), Argon2 hashing, password policy</li>
+      <li>Role / Permission model + decorators + Next.js route guards</li>
+      <li>User CRUD, User ↔ Division mapping</li>
+      <li>Masters: Division, Bank, Customer, Salesman, Lawyer, Case Type</li>
+      <li>Brand-styled login screen + light/dark toggle on public page</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 2</span><strong>Legal Case Entry Form</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Case model, multi-cheque sub-form (+ button), attachments</li>
+      <li>Auto today's date, dropdowns from masters, signatory selection</li>
+      <li>Save draft / submit, auto-case-number generation</li>
+      <li>Branded print view (header logo, gold accents, signatory grid)</li>
+      <li>Server-side validation + audit-log hook</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 3</span><strong>Approval Workflow Engine</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Configurable stage engine (Accountant → … → Lawyer)</li>
+      <li>Approval Inbox per role, approve / reject / request-clarification with command</li>
+      <li>SLA timers, auto-escalation</li>
+      <li>Status timeline per case (visual flow chart)</li>
+      <li>Audit log entries per transition</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 4</span><strong>Court Filing, Hearings, Expenses</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Court filing: Police No., Court No., filed date, acknowledgment upload</li>
+      <li>Hearing tracker: next date/time/location, commands, attachments</li>
+      <li>Lawyer cash request → FM approval → Accountant payment → receipt</li>
+      <li>Per-case expense ledger &amp; total spend rollup</li>
+      <li>Calendar view of upcoming hearings</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 5</span><strong>Notifications &amp; Email Log</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>SMTP config in settings, Jinja2 branded HTML templates</li>
+      <li>Event-driven dispatcher with rule matrix</li>
+      <li>In-app bell with unread badge, mark read/all</li>
+      <li>Email Log module: list, preview, resend, attachment download</li>
+      <li>Bounce handling stub</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 6</span><strong>Reports + Excel/PDF/Print Export</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Report registry pattern, parameter UI, role-scoped data</li>
+      <li>Excel renderer with branded header, frozen rows, formatting</li>
+      <li>PDF renderer with PUG header/footer, watermark, page numbers</li>
+      <li>Print-optimized CSS for every list &amp; detail page</li>
+      <li>Case detail report including embedded attachments preview</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 7</span><strong>Scheduled Reporting via Email</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>ScheduledReport model + cron parser + APScheduler/Celery beat</li>
+      <li>Create-schedule UI: report, params, recipients, formats, cadence</li>
+      <li>Branded HTML summary + PDF/Excel attachments</li>
+      <li>Run history, pause/resume, run-now</li>
+      <li>Failure retries &amp; alert to admin</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 8</span><strong>Audit Log (Tamper-Evident)</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Append-only AuditLog with hash chain</li>
+      <li>SQLAlchemy event hooks for all mutating ops</li>
+      <li>UI: filters, diff view (before / after), CSV/PDF export</li>
+      <li>Chain verification job &amp; alert on tamper</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 9</span><strong>Backup &amp; Restore (PugFin Parity)</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Port backup service from PugFin App (DB dump + object archive)</li>
+      <li>AES-256 encryption with system key, checksum &amp; manifest</li>
+      <li>Scheduled backups, retention policy, optional S3 offsite</li>
+      <li>Restore wizard with pre-restore safety snapshot</li>
+      <li>Integrity verify job (test-restore in temp schema)</li>
+      <li>All actions audited</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 10</span><strong>System Settings &amp; Admin Console</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>All 12 setting groups (Company &amp; Branding, SMTP, AI, Numbering, Workflow, Security, Backup, Notifications, Appearance, Integrations, Data Mgmt, Maintenance)</li>
+      <li>Encrypted secrets at rest, masked inputs, test buttons</li>
+      <li>Notification Template editor (WYSIWYG + variables + preview)</li>
+      <li>Workflow Designer UI</li>
+      <li>Health &amp; Diagnostics page</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 11</span><strong>Executive Dashboard &amp; Charts</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>KPI cards (cases filed, value, recovered, pending, closed)</li>
+      <li>Hearing calendar &amp; alerts panel</li>
+      <li>Status heatmap (division × status), trend lines</li>
+      <li>Drill-through to case list with applied filters</li>
+      <li>Role-scoped dashboards</li>
+    </ul>
+  </div>
+
+  <div class="phase">
+    <header><span class="badge gold">Phase 12</span><strong>Hardening, Tests, Deploy</strong><span class="tokens">≈ 1 session</span></header>
+    <ul>
+      <li>Unit + integration tests (pytest, Playwright e2e for golden paths)</li>
+      <li>Security pass: headers, CSRF, rate-limit, 2FA enforcement</li>
+      <li>Load test reports &amp; export endpoints</li>
+      <li>Production docker-compose, nginx TLS, Sentry hookup</li>
+      <li>Runbooks (backup/restore, on-call), user manual</li>
+    </ul>
+  </div>
+</section>
+
+<section id="deliverables">
+  <h2>10. Per-Phase Deliverables</h2>
+  <ul>
+    <li>Conventional-commit history with clear messages</li>
+    <li>Updated OpenAPI / Storybook docs</li>
+    <li>Migrations checked in, reversible</li>
+    <li>CI green (lint + tests)</li>
+    <li>Demo script + screenshots in <code>docs/phases/&lt;n&gt;.md</code></li>
+    <li>Backward-compatible feature flags where applicable</li>
+  </ul>
+  <p style="margin-top:14px">
+    <strong>Next step:</strong> reply with <code>start Phase 0</code> to kick off scaffolding.
+  </p>
+</section>
+
+</main>
+
+<footer class="brand-foot">
+  &copy; Paris United Group Holding &middot; Legal Case Control System &middot; Phase Plan v1.0
+</footer>
+
+</body>
+</html>
