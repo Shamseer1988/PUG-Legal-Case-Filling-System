@@ -1,4 +1,4 @@
-# PUG Legal Case Control System — one-time local dev setup (Windows / PowerShell)
+# PUG Legal Case Control System - one-time local dev setup (Windows / PowerShell)
 # Direct (PugFin-style) setup: no Docker required.
 #
 # Run from the repository root:
@@ -19,8 +19,11 @@ Write-Host "==> Setting up backend (Python venv)" -ForegroundColor Cyan
 Set-Location "$Root\backend"
 
 if (-not (Test-Path ".venv")) {
-    py -3.12 -m venv .venv
-    if ($LASTEXITCODE -ne 0) { python -m venv .venv }
+    try {
+        py -3.12 -m venv .venv
+    } catch {
+        python -m venv .venv
+    }
 }
 
 & ".\.venv\Scripts\Activate.ps1"
@@ -36,7 +39,7 @@ Write-Host "==> Running Alembic migrations"
 try {
     alembic upgrade head
 } catch {
-    Write-Host "!! Alembic failed — confirm Postgres is running and DATABASE_URL is correct." -ForegroundColor Yellow
+    Write-Host "!! Alembic failed - confirm Postgres is running and DATABASE_URL is correct." -ForegroundColor Yellow
 }
 
 deactivate
