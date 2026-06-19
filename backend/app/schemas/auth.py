@@ -9,6 +9,7 @@ class LoginRequest(BaseModel):
     # user-create time, not at login.
     email: str
     password: str
+    totp_code: str | None = None
 
 
 class TokenResponse(BaseModel):
@@ -29,3 +30,14 @@ class MeResponse(BaseModel):
     permissions: list[str]
     is_super: bool
     divisions: list[int]
+    totp_enabled: bool = False
+
+
+class TotpEnrollResponse(BaseModel):
+    secret: str
+    otpauth_url: str
+    qr_data_url: str
+
+
+class TotpVerifyRequest(BaseModel):
+    code: str

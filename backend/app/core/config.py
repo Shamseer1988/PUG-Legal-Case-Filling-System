@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     # Backup (Phase 9)
     backup_encryption_key: str = ""  # base64-encoded 32 bytes; blank disables encryption
 
+    # Hardening (Phase 12)
+    security_headers_enabled: bool = True
+    rate_limit_login_per_minute: int = 10
+    rate_limit_login_per_hour: int = 100
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.0
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

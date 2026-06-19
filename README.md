@@ -111,7 +111,9 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 9     | Backup & Restore (PugFin parity)       | ✅ Done     |
 | 10    | System Settings & Admin Console        | ✅ Done     |
 | 11    | Executive Dashboard & Charts           | ✅ Done     |
-| 12    | Hardening, Tests, Deploy               | Pending     |
+| 12    | Hardening, Tests, Deploy               | ✅ Done     |
+
+All 13 phases complete. Version: **1.0.0**.
 
 ## License
 

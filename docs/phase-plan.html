@@ -947,13 +947,17 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 12</span><strong>Hardening, Tests, Deploy</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 12 ✓</span><strong>Hardening, Tests, Deploy</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>Unit + integration tests (pytest, Playwright e2e for golden paths)</li>
-      <li>Security pass: headers, CSRF, rate-limit, 2FA enforcement</li>
-      <li>Load test reports &amp; export endpoints</li>
-      <li>Production docker-compose, nginx TLS, Sentry hookup</li>
-      <li>Runbooks (backup/restore, on-call), user manual</li>
+      <li><strong>Security headers</strong> middleware (HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy) applied to every response; HSTS only when the request actually came in over HTTPS</li>
+      <li>In-memory per-IP <strong>rate limit</strong> on <code>/auth/login</code> (10/min, 100/hour by default; both configurable) - clears on successful login</li>
+      <li>TOTP <strong>2FA</strong>: <code>users.totp_secret</code> + <code>totp_enabled</code> columns, <code>/auth/2fa/enroll</code> (returns secret + otpauth URL + base64 QR), <code>/auth/2fa/verify</code>, <code>/auth/2fa/disable</code>. Login challenges with <code>totp_required</code> / <code>totp_invalid</code>. <code>/profile</code> page lets users self-enrol with QR code scan + 6-digit verification.</li>
+      <li><strong>Sentry</strong> SDK init (env-gated via <code>SENTRY_DSN</code>) with release tag <code>pug-legal@1.0.0</code></li>
+      <li>Production infra: <code>infra/docker-compose.prod.yml</code> (healthchecks, restart policies, secret-required env vars, bind-mounted data dirs), <code>infra/nginx-prod.conf</code> (HTTP-&gt;HTTPS redirect, modern TLS suites, real-IP, gzip, security headers), <code>infra/systemd/pug-backend.service</code> + <code>pug-frontend.service</code> for direct deployments</li>
+      <li><strong>Runbooks</strong>: <code>docs/runbooks/deploy.md</code> (both direct + Docker paths), <code>docs/runbooks/backup-restore.md</code>, <code>docs/runbooks/on-call.md</code> (symptom map + psql snippets)</li>
+      <li><strong>User manual</strong>: <code>docs/user-manual.md</code> covers roles, sign-in, case filing, approvals, court filing / hearings, reports, scheduled reports, 2FA self-enrolment</li>
+      <li>Migration <code>0010_phase12_2fa</code>; tests for security headers, login rate limit, 2FA enroll-verify-login-disable round trip</li>
+      <li>Version bumped to <strong>1.0.0</strong></li>
     </ul>
   </div>
 </section>

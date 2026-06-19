@@ -648,9 +648,60 @@ settings + dashboard).
 
 ---
 
-## 19. What's NOT done yet
+## 19. Phase 12 - Hardening, Tests, Deploy
 
-These arrive in later phases (so do not test for them):
+After running migration `0010_phase12_2fa` (and `npm install` for the
+profile page):
+
+1. **Security headers** - any response now includes
+   `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+   `Referrer-Policy: strict-origin-when-cross-origin`. HSTS is only
+   added when the request actually came in over HTTPS (so dev HTTP
+   isn't broken).
+
+   ```powershell
+   curl -I http://127.0.0.1:8000/
+   ```
+
+2. **Rate limit** - the 11th failed login from the same IP within a
+   minute returns `429 Too Many Requests`. Tune
+   `RATE_LIMIT_LOGIN_PER_MINUTE` in `backend\.env`.
+
+3. **2FA self-enrolment** - **Sidebar -> My Profile**:
+   - Click **Set up 2FA**.
+   - Scan the QR code in Google Authenticator / 1Password / Authy
+     (or paste the raw secret).
+   - Enter the 6-digit code, click **Activate** -> banner flips to
+     "Enabled".
+   - Sign out, sign in - the login screen now asks for the code.
+4. **Sentry** - set `SENTRY_DSN` in `backend\.env` to wire crash
+   reporting. Leave blank to disable.
+5. **Production infra** - see `infra/docker-compose.prod.yml`,
+   `infra/nginx-prod.conf`, `infra/systemd/*.service`. Step-by-step
+   in `docs/runbooks/deploy.md`.
+6. **Runbooks + user manual** are in `docs/`.
+
+Run `pytest -q` -> 57 tests pass (auth + cases + workflow + court +
+notifications + reports + scheduled reports + audit + backup +
+settings + dashboard + hardening + 2FA).
+
+### Final version: **1.0.0**
+
+All 13 phases (Phase 0 through Phase 12) are complete. The product is
+ready for production deployment.
+
+---
+
+## 20. What's NOT in 1.0.0
+
+Items that could land in 1.1+ if needed:
+
+- Playwright e2e suite for golden paths
+- Backup auto-prune driven by the Backup Policy settings UI
+- WYSIWYG notification template editor
+- Workflow Designer drag-and-drop UI
+- S3 storage backend (currently local filesystem only)
+- Live load-test results (templates in runbooks, no recurring run yet)
 
 - Court filing, hearings, expenses (Phase 4)
 - Notifications & Email Log (Phase 5)

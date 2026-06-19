@@ -1,0 +1,108 @@
+# Production docker-compose. Tighter than the dev compose file:
+#   - explicit restart policies
+#   - bind-mounted data dirs (move volumes outside the container)
+#   - environment from a single .env on the host
+#   - healthchecks on Postgres and the backend
+#
+# Usage:
+#   cp .env.example /etc/pug-legal/.env  (edit secrets!)
+#   docker compose -f infra/docker-compose.prod.yml --env-file /etc/pug-legal/.env up -d
+#
+# For TLS termination use the nginx config in infra/nginx-prod.conf
+# pointed at backend:8000 and frontend:3000.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?password required}
+      POSTGRES_DB: ${POSTGRES_DB:-pug_legal}
+    volumes:
+      - /var/lib/pug-legal/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [pug]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    volumes:
+      - /var/lib/pug-legal/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [pug]
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/backend.Dockerfile
+    restart: unless-stopped
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-pug_legal}
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_LOCAL_PATH: /data/storage
+      BACKUP_LOCAL_PATH: /data/backups
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://pug-legal.example.com}
+      APP_SECRET_KEY: ${APP_SECRET_KEY:?secret required}
+      BACKUP_ENCRYPTION_KEY: ${BACKUP_ENCRYPTION_KEY:?backup key required}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME}
+      SENTRY_DSN: ${SENTRY_DSN}
+      BRAND_APP_URL: ${BRAND_APP_URL:-https://pug-legal.example.com}
+      SECURITY_HEADERS_ENABLED: "true"
+    volumes:
+      - /var/lib/pug-legal/storage:/data/storage
+      - /var/lib/pug-legal/backups:/data/backups
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [pug]
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/frontend.Dockerfile
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://pug-legal.example.com}
+    depends_on:
+      - backend
+    networks: [pug]
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-prod.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - backend
+      - frontend
+    networks: [pug]
+
+networks:
+  pug:
+    driver: bridge

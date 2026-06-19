@@ -11,6 +11,7 @@ export type Me = {
   permissions: string[];
   is_super: boolean;
   divisions: number[];
+  totp_enabled?: boolean;
 };
 
 type State = {

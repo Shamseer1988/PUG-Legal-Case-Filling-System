@@ -11,6 +11,8 @@ export default function LoginPage() {
   const { accessToken, setTokens, setMe } = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [totpCode, setTotpCode] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -23,9 +25,11 @@ export default function LoginPage() {
     setBusy(true);
     setError(null);
     try {
+      const body: Record<string, string> = { email, password };
+      if (needsTotp) body.totp_code = totpCode;
       const tokens = await api<{ access_token: string; refresh_token: string }>(
         '/api/v1/auth/login',
-        { method: 'POST', body: { email, password }, auth: false },
+        { method: 'POST', body, auth: false },
       );
       setTokens(tokens.access_token, tokens.refresh_token);
       const me = await api<Me>('/api/v1/auth/me');
@@ -33,7 +37,17 @@ export default function LoginPage() {
       router.replace('/dashboard');
     } catch (err) {
       const e = err as ApiError;
-      setError(e.message || 'Login failed');
+      // Surface the 2FA challenge cleanly
+      if (e.message === 'totp_required' || e.message === 'totp_invalid') {
+        setNeedsTotp(true);
+        setError(
+          e.message === 'totp_invalid'
+            ? 'Invalid 6-digit code. Try again.'
+            : 'Enter the 6-digit code from your authenticator app.',
+        );
+      } else {
+        setError(e.message || 'Login failed');
+      }
     } finally {
       setBusy(false);
     }
@@ -110,6 +124,23 @@ export default function LoginPage() {
                 className="w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm focus:border-pug-gold-500 focus:outline-none"
               />
             </div>
+            {needsTotp && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                  Authenticator Code
+                </label>
+                <input
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={6}
+                  autoComplete="one-time-code"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value.replace(/\D/g, ''))}
+                  className="w-full rounded-md border border-pug-gold-500/60 bg-transparent px-3 py-2 text-center font-mono text-lg tracking-widest focus:border-pug-gold-500 focus:outline-none"
+                  placeholder="123456"
+                />
+              </div>
+            )}
             {error && (
               <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
                 {error}
@@ -120,7 +151,7 @@ export default function LoginPage() {
               disabled={busy}
               className="w-full rounded-md bg-pug-gold-500 px-4 py-2 text-sm font-semibold text-pug-navy-800 transition hover:bg-pug-gold-400 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {busy ? 'Signing in...' : 'Sign in'}
+              {busy ? 'Signing in...' : needsTotp ? 'Verify & Sign in' : 'Sign in'}
             </button>
           </form>
 

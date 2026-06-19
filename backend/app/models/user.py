@@ -30,6 +30,13 @@ class User(Base, TimestampMixin):
     is_super: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Phase 12 - TOTP 2FA
+    totp_secret: Mapped[str] = mapped_column(String(64), default="")
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    totp_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     role: Mapped[Role] = relationship(lazy="joined")
     divisions: Mapped[list["Division"]] = relationship(
         secondary="user_division_map", lazy="selectin"
