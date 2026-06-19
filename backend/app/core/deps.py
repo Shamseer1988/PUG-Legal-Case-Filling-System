@@ -6,6 +6,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 
+from app.core import request_context
 from app.core.permissions import has_permission
 from app.core.security import decode_token
 from app.db.session import get_db
@@ -38,6 +39,10 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="User disabled or missing"
         )
+    # Attach actor info to the request context so the audit log can pick it up
+    request_context.attach_user(
+        user.id, user.email, user.role.name if user.role else ""
+    )
     return user
 
 

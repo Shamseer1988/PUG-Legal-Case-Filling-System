@@ -891,12 +891,14 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 8</span><strong>Audit Log (Tamper-Evident)</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 8 ✓</span><strong>Audit Log (Tamper-Evident)</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>Append-only AuditLog with hash chain</li>
-      <li>SQLAlchemy event hooks for all mutating ops</li>
-      <li>UI: filters, diff view (before / after), CSV/PDF export</li>
-      <li>Chain verification job &amp; alert on tamper</li>
+      <li><code>AuditLog</code> table with <code>prev_hash</code> + <code>row_hash</code> forming a SHA-256 chain; rows are append-only and the tail is row-locked while writing</li>
+      <li>Per-request context (IP + User-Agent) carried via contextvars; the JWT dep attaches actor (id / email / role) so every audit row is fully attributed</li>
+      <li>Explicit <code>audit_service.record_event()</code> calls at all key mutation points: login / login_failed / password_change, master CRUD (Division, Bank, Customer, Salesman, Lawyer, Case Type), user + role CRUD, case create / delete, every workflow transition (submit / approve / reject / clarify / resubmit), court filing, hearings, cash request create / approve / reject / pay</li>
+      <li><code>/api/v1/audit-log</code> endpoints: list with filters (action, entity, actor, date range, text search), detail with before/after JSON + hashes, <code>verify</code> walks the chain and reports broken links, <code>.csv</code> and <code>.pdf</code> exports</li>
+      <li>UI at <code>/admin/audit-log</code>: filter bar, paginated table, click-to-open detail drawer with field-level diff (before in red, after in green), CSV / PDF download buttons, big "Verify Chain" button that surfaces tampering in a red banner</li>
+      <li>Migration <code>0007_phase8_audit</code>; tests for login audit, master CRUD audit, chain verify, tamper detection, CSV/PDF export and filter</li>
     </ul>
   </div>
 

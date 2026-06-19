@@ -2,12 +2,13 @@
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from app import __version__
 from app.api.v1 import api_router
+from app.core import request_context
 from app.core.config import settings
 from app.core.logging import setup_logging
 
@@ -43,6 +44,22 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def request_context_middleware(request: Request, call_next):
+    """Populate a per-request context (IP + User-Agent) consumed by the audit log."""
+    client_host = request.client.host if request.client else ""
+    # Trust X-Forwarded-For only if it's set (typical when behind nginx)
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = (fwd.split(",")[0].strip() if fwd else client_host)[:45]
+    ua = request.headers.get("user-agent", "")[:500]
+    ctx = request_context.RequestContext(ip=ip, user_agent=ua)
+    token = request_context.set_ctx(ctx)
+    try:
+        return await call_next(request)
+    finally:
+        request_context.reset_ctx(token)
+
 
 app.include_router(api_router, prefix="/api/v1")
 

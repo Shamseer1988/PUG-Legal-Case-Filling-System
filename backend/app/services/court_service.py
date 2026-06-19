@@ -33,6 +33,7 @@ from app.schemas.court import (
     HearingCreate,
     HearingUpdate,
 )
+from app.services import audit_service
 
 
 def _utcnow() -> datetime:
@@ -82,6 +83,21 @@ def create_court_filing(
     )
     db.commit()
     db.refresh(filing)
+    audit_service.record_event(
+        db,
+        action="court_filed",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Court filing recorded for {case.case_no}",
+        after={
+            "police_case_no": filing.police_case_no,
+            "court_case_no": filing.court_case_no,
+            "filed_court": filing.filed_court,
+            "filed_date": str(filing.filed_date) if filing.filed_date else None,
+        },
+        actor=user,
+        commit=True,
+    )
     from app.services import notification_service
 
     notification_service.on_court_filed(db, case, user)
@@ -123,6 +139,21 @@ def create_hearing(db: Session, case: Case, user: User, payload: HearingCreate) 
     )
     db.commit()
     db.refresh(h)
+    audit_service.record_event(
+        db,
+        action="hearing_added",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Hearing on {payload.hearing_date:%Y-%m-%d} ({payload.hearing_type})",
+        after={
+            "hearing_id": h.id,
+            "hearing_type": h.hearing_type,
+            "location": h.location,
+            "next_hearing_date": str(h.next_hearing_date) if h.next_hearing_date else None,
+        },
+        actor=user,
+        commit=True,
+    )
     return h
 
 
@@ -152,6 +183,16 @@ def create_cash_request(
     db.add(cr)
     db.commit()
     db.refresh(cr)
+    audit_service.record_event(
+        db,
+        action="cash_request_created",
+        entity_type="CashRequest",
+        entity_id=cr.id,
+        summary=f"Cash request {cr.amount} for {case.case_no}",
+        after={"amount": str(cr.amount), "purpose": cr.purpose, "case_no": case.case_no},
+        actor=user,
+        commit=True,
+    )
     from app.services import notification_service
 
     notification_service.on_cash_request_created(db, cr, case)
@@ -170,6 +211,17 @@ def approve_cash_request(
     cr.approval_comment = comment.strip()
     db.commit()
     db.refresh(cr)
+    audit_service.record_event(
+        db,
+        action="cash_request_approved",
+        entity_type="CashRequest",
+        entity_id=cr.id,
+        summary=f"Approved cash request {cr.amount}",
+        before={"status": CASH_REQUEST_REQUESTED},
+        after={"status": cr.status, "comment": cr.approval_comment},
+        actor=user,
+        commit=True,
+    )
     from app.services import notification_service
 
     case = db.get(Case, cr.case_id)
@@ -190,6 +242,17 @@ def reject_cash_request(
     cr.approval_comment = payload.comment.strip()
     db.commit()
     db.refresh(cr)
+    audit_service.record_event(
+        db,
+        action="cash_request_rejected",
+        entity_type="CashRequest",
+        entity_id=cr.id,
+        summary=f"Rejected cash request {cr.amount}",
+        before={"status": CASH_REQUEST_REQUESTED},
+        after={"status": cr.status, "comment": cr.approval_comment},
+        actor=user,
+        commit=True,
+    )
     from app.services import notification_service
 
     case = db.get(Case, cr.case_id)
@@ -211,6 +274,21 @@ def pay_cash_request(
     cr.receipt_attachment_id = payload.receipt_attachment_id
     db.commit()
     db.refresh(cr)
+    audit_service.record_event(
+        db,
+        action="cash_request_paid",
+        entity_type="CashRequest",
+        entity_id=cr.id,
+        summary=f"Paid cash request {cr.amount} (ref: {cr.payment_reference or '-'})",
+        before={"status": CASH_REQUEST_APPROVED},
+        after={
+            "status": cr.status,
+            "payment_reference": cr.payment_reference,
+            "receipt_attachment_id": cr.receipt_attachment_id,
+        },
+        actor=user,
+        commit=True,
+    )
     from app.services import notification_service
 
     case = db.get(Case, cr.case_id)

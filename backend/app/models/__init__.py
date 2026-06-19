@@ -1,6 +1,7 @@
 """Aggregate models import."""
 
 from app.db.base import Base
+from app.models.audit import AuditLog
 from app.models.case import Case, CaseAttachment, CaseNoSequence, CaseStatusUpdate, Cheque
 from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
@@ -31,4 +32,5 @@ __all__ = [
     "EmailLog",
     "ScheduledReport",
     "ScheduledReportRun",
+    "AuditLog",
 ]

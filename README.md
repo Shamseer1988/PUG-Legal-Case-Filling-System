@@ -107,7 +107,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 5     | Notifications & Email Log              | ✅ Done     |
 | 6     | Reports + Excel/PDF/Print Export       | ✅ Done     |
 | 7     | Scheduled Reporting via Email          | ✅ Done     |
-| 8     | Audit Log (Tamper-Evident)             | Pending     |
+| 8     | Audit Log (Tamper-Evident)             | ✅ Done     |
 | 9     | Backup & Restore (PugFin parity)       | Pending     |
 | 10    | System Settings & Admin Console        | Pending     |
 | 11    | Executive Dashboard & Charts           | Pending     |

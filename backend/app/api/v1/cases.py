@@ -25,7 +25,7 @@ from app.schemas.case import (
     CaseRead,
     CaseUpdate,
 )
-from app.services import case_service, render, storage, workflow_service
+from app.services import audit_service, case_service, render, storage, workflow_service
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -60,6 +60,22 @@ def create_case(
     user: User = Depends(require_permission(CASES_CREATE)),
 ) -> CaseRead:
     case = case_service.create_case(db, payload, user)
+    audit_service.audit_create(
+        db,
+        "Case",
+        case.id,
+        f"Created case {case.case_no}",
+        {
+            "case_no": case.case_no,
+            "customer_id": case.customer_id,
+            "division_id": case.division_id,
+            "legal_filing_amount": str(case.legal_filing_amount),
+            "is_criminal": case.is_criminal,
+            "is_civil": case.is_civil,
+            "status": case.status,
+        },
+        commit=True,
+    )
     return CaseRead.model_validate(case)
 
 
@@ -179,6 +195,13 @@ def delete_case(
     case = _get_case_or_404(db, user, case_id)
     if case.status != CASE_STATUS_DRAFT:
         raise HTTPException(status_code=400, detail="Only Draft cases can be deleted")
+    audit_service.audit_delete(
+        db,
+        "Case",
+        case.id,
+        f"Deleted draft case {case.case_no}",
+        {"case_no": case.case_no, "status": case.status},
+    )
     storage.delete_case_dir(case.id)
     db.delete(case)
     db.commit()

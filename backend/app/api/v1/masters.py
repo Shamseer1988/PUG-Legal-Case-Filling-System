@@ -31,6 +31,7 @@ from app.schemas.masters import (
     SalesmanRead,
     SalesmanUpdate,
 )
+from app.services import audit_service
 
 router = APIRouter(tags=["masters"])
 
@@ -53,6 +54,8 @@ def _register(
     ):
         return [read_schema.model_validate(x) for x in db.query(model).order_by(order_by).all()]
 
+    entity_type = model.__name__
+
     @router.post(path, response_model=read_schema, status_code=status.HTTP_201_CREATED)
     def create_item(
         payload: create_schema,
@@ -67,6 +70,14 @@ def _register(
                 )
         obj = model(**payload.model_dump())
         db.add(obj)
+        db.flush()
+        audit_service.audit_create(
+            db,
+            entity_type,
+            obj.id,
+            f"Created {entity_type}: {getattr(obj, 'name', '') or getattr(obj, 'code', obj.id)}",
+            audit_service.snapshot(obj),
+        )
         db.commit()
         db.refresh(obj)
         return read_schema.model_validate(obj)
@@ -92,8 +103,19 @@ def _register(
         obj = db.get(model, item_id)
         if not obj:
             raise HTTPException(status_code=404, detail="Not found")
+        before = audit_service.snapshot(obj)
         for k, v in payload.model_dump(exclude_unset=True).items():
             setattr(obj, k, v)
+        db.flush()
+        after = audit_service.snapshot(obj)
+        audit_service.audit_update(
+            db,
+            entity_type,
+            obj.id,
+            f"Updated {entity_type} #{obj.id}",
+            before,
+            after,
+        )
         db.commit()
         db.refresh(obj)
         return read_schema.model_validate(obj)
@@ -107,6 +129,11 @@ def _register(
         obj = db.get(model, item_id)
         if not obj:
             raise HTTPException(status_code=404, detail="Not found")
+        before = audit_service.snapshot(obj)
+        label = getattr(obj, "name", "") or getattr(obj, "code", obj.id)
+        audit_service.audit_delete(
+            db, entity_type, obj.id, f"Deleted {entity_type}: {label}", before
+        )
         db.delete(obj)
         db.commit()
 

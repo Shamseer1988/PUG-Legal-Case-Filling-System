@@ -4,6 +4,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     approvals,
+    audit,
     auth,
     cases,
     court,
@@ -32,3 +33,4 @@ api_router.include_router(notifications.router)
 api_router.include_router(email_log.router)
 api_router.include_router(reports.router)
 api_router.include_router(scheduled_reports.router)
+api_router.include_router(audit.router)

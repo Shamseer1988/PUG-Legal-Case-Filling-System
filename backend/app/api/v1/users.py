@@ -9,6 +9,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.user import Role, User, UserDivisionMap
 from app.schemas.user import UserCreate, UserRead, UserUpdate
+from app.services import audit_service
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -58,6 +59,20 @@ def create_user(
     db.flush()
     for did in payload.division_ids:
         db.add(UserDivisionMap(user_id=user.id, division_id=did))
+    audit_service.audit_create(
+        db,
+        "User",
+        user.id,
+        f"Created user {user.email} (role={role.name})",
+        {
+            "email": user.email,
+            "full_name": user.full_name,
+            "role_id": user.role_id,
+            "is_active": user.is_active,
+            "is_super": user.is_super,
+            "division_ids": list(payload.division_ids),
+        },
+    )
     db.commit()
     db.refresh(user)
     return _to_read(user)
@@ -86,9 +101,19 @@ def update_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
+    before = {
+        "full_name": user.full_name,
+        "role_id": user.role_id,
+        "is_active": user.is_active,
+        "is_super": user.is_super,
+        "division_ids": [d.id for d in user.divisions],
+    }
+
     data = payload.model_dump(exclude_unset=True)
+    password_changed = False
     if "password" in data and data["password"]:
         user.password_hash = hash_password(data.pop("password"))
+        password_changed = True
     else:
         data.pop("password", None)
     division_ids = data.pop("division_ids", None)
@@ -101,6 +126,24 @@ def update_user(
         for did in division_ids:
             db.add(UserDivisionMap(user_id=user.id, division_id=did))
 
+    after = {
+        "full_name": user.full_name,
+        "role_id": user.role_id,
+        "is_active": user.is_active,
+        "is_super": user.is_super,
+        "division_ids": division_ids if division_ids is not None else before["division_ids"],
+    }
+    audit_service.audit_update(
+        db, "User", user.id, f"Updated user {user.email}", before, after
+    )
+    if password_changed:
+        audit_service.record_event(
+            db,
+            action="password_change",
+            entity_type="User",
+            entity_id=user.id,
+            summary=f"Password reset for {user.email}",
+        )
     db.commit()
     db.refresh(user)
     return _to_read(user)
@@ -115,5 +158,12 @@ def delete_user(
     user = db.get(User, user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    audit_service.audit_delete(
+        db,
+        "User",
+        user.id,
+        f"Deleted user {user.email}",
+        {"email": user.email, "role_id": user.role_id, "is_super": user.is_super},
+    )
     db.delete(user)
     db.commit()

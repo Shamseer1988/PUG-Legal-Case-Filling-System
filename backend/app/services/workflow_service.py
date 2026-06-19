@@ -48,6 +48,33 @@ def _set_stage(case: Case, new_stage: str, cfg: StageConfig | None) -> None:
     )
 
 
+def _audit_transition(
+    db: Session,
+    case: Case,
+    actor: User,
+    *,
+    action: str,
+    from_status: str,
+    to_status: str,
+    from_stage: str,
+    to_stage: str,
+    comment: str,
+) -> None:
+    from app.services import audit_service
+
+    audit_service.record_event(
+        db,
+        action=action,
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"{action} {case.case_no}: {from_stage} -> {to_stage}",
+        before={"status": from_status, "stage": from_stage},
+        after={"status": to_status, "stage": to_stage},
+        meta={"comment": comment[:500]} if comment else None,
+        actor=actor,
+    )
+
+
 def _log(
     db: Session,
     case: Case,
@@ -99,6 +126,17 @@ def submit(db: Session, case: Case, user: User) -> Case:
         to_stage=case.current_stage,
         comment="Submitted for approval",
     )
+    _audit_transition(
+        db,
+        case,
+        user,
+        action=ACTION_SUBMIT,
+        from_status=from_status,
+        to_status=case.status,
+        from_stage=from_stage,
+        to_stage=case.current_stage,
+        comment="Submitted for approval",
+    )
     db.commit()
     db.refresh(case)
     from app.services import notification_service
@@ -137,6 +175,17 @@ def approve(db: Session, case: Case, user: User, comment: str) -> Case:
         to_stage=case.current_stage,
         comment=comment,
     )
+    _audit_transition(
+        db,
+        case,
+        user,
+        action=ACTION_APPROVE,
+        from_status=from_status,
+        to_status=case.status,
+        from_stage=from_stage,
+        to_stage=case.current_stage,
+        comment=comment,
+    )
     db.commit()
     db.refresh(case)
     from app.services import notification_service
@@ -159,6 +208,17 @@ def reject(db: Session, case: Case, user: User, comment: str) -> Case:
         case,
         user,
         ACTION_REJECT,
+        from_status=from_status,
+        to_status=case.status,
+        from_stage=from_stage,
+        to_stage=case.current_stage,
+        comment=comment,
+    )
+    _audit_transition(
+        db,
+        case,
+        user,
+        action=ACTION_REJECT,
         from_status=from_status,
         to_status=case.status,
         from_stage=from_stage,
@@ -190,6 +250,17 @@ def request_clarification(db: Session, case: Case, user: User, comment: str) -> 
         case,
         user,
         ACTION_REQUEST_CLARIFICATION,
+        from_status=from_status,
+        to_status=case.status,
+        from_stage=from_stage,
+        to_stage=case.current_stage,
+        comment=comment,
+    )
+    _audit_transition(
+        db,
+        case,
+        user,
+        action=ACTION_REQUEST_CLARIFICATION,
         from_status=from_status,
         to_status=case.status,
         from_stage=from_stage,
@@ -230,6 +301,17 @@ def resubmit(db: Session, case: Case, user: User, comment: str) -> Case:
         case,
         user,
         ACTION_RESUBMIT,
+        from_status=from_status,
+        to_status=case.status,
+        from_stage=from_stage,
+        to_stage=case.current_stage,
+        comment=comment or "Clarification answered, resubmitting.",
+    )
+    _audit_transition(
+        db,
+        case,
+        user,
+        action=ACTION_RESUBMIT,
         from_status=from_status,
         to_status=case.status,
         from_stage=from_stage,

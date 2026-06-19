@@ -8,6 +8,7 @@ from app.core.permissions import ROLES_READ, ROLES_WRITE
 from app.db.session import get_db
 from app.models.user import Role, User
 from app.schemas.user import RoleCreate, RoleRead, RoleUpdate
+from app.services import audit_service
 
 router = APIRouter(prefix="/roles", tags=["roles"])
 
@@ -30,6 +31,14 @@ def create_role(
         raise HTTPException(status_code=409, detail="Role name already exists")
     role = Role(**payload.model_dump())
     db.add(role)
+    db.flush()
+    audit_service.audit_create(
+        db,
+        "Role",
+        role.id,
+        f"Created role {role.name}",
+        {"name": role.name, "permissions": list(role.permissions)},
+    )
     db.commit()
     db.refresh(role)
     return RoleRead.model_validate(role)
@@ -47,8 +56,20 @@ def update_role(
         raise HTTPException(status_code=404, detail="Role not found")
     if role.is_system and payload.name and payload.name != role.name:
         raise HTTPException(status_code=400, detail="Cannot rename a system role")
+    before = {"name": role.name, "description": role.description, "permissions": list(role.permissions)}
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(role, k, v)
+    after = {"name": role.name, "description": role.description, "permissions": list(role.permissions)}
+    audit_service.audit_update(
+        db,
+        "Role",
+        role.id,
+        f"Updated role {role.name}" + (
+            " (permissions changed)" if before["permissions"] != after["permissions"] else ""
+        ),
+        before,
+        after,
+    )
     db.commit()
     db.refresh(role)
     return RoleRead.model_validate(role)
@@ -65,5 +86,12 @@ def delete_role(
         raise HTTPException(status_code=404, detail="Role not found")
     if role.is_system:
         raise HTTPException(status_code=400, detail="Cannot delete a system role")
+    audit_service.audit_delete(
+        db,
+        "Role",
+        role.id,
+        f"Deleted role {role.name}",
+        {"name": role.name, "permissions": list(role.permissions)},
+    )
     db.delete(role)
     db.commit()

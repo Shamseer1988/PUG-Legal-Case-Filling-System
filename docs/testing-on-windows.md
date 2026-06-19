@@ -507,7 +507,38 @@ so to verify a real cron fire you can set a schedule to `*/2 * * * *`
 
 ---
 
-## 15. What's NOT done yet
+## 15. Phase 8 - Tamper-Evident Audit Log
+
+After running migration `0007_phase8_audit`:
+
+1. Sign in - one **login** entry appears immediately in the audit log.
+2. Go to **Admin -> Audit Log**. Use the filter bar (action, entity,
+   date range, text) to narrow the view.
+3. Click any row - the right-hand drawer opens with full detail: actor,
+   IP, User-Agent, **prev_hash** + **row_hash**, and a colour-coded
+   before / after diff table.
+4. Click **Verify Chain** at the top - a green banner appears if the
+   chain is intact, red if any row's hash doesn't match.
+5. To demonstrate tamper detection: with the backend stopped, edit a
+   row's `summary` in Postgres directly, restart, click **Verify Chain**
+   - the banner flips red and lists every broken entry.
+6. **CSV** and **PDF** buttons download the currently-filtered slice
+   with the row hashes intact.
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET /api/v1/audit-log` (filters: action, entity_type, actor_id,
+  date_from, date_to, q, limit)
+- `GET /api/v1/audit-log/{id}` - detail with before / after JSON
+- `GET /api/v1/audit-log/verify` - chain verification
+- `GET /api/v1/audit-log.csv` and `.pdf` - branded exports
+
+Run `pytest -q` -> 35 tests pass (auth + cases + workflow + court +
+notifications + reports + scheduled reports + audit).
+
+---
+
+## 16. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 
