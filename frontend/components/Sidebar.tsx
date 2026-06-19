@@ -28,8 +28,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasPermission, useAuthStore } from '@/lib/auth';
-import { NotificationBell } from './NotificationBell';
-import { ThemeToggle } from './ThemeToggle';
+
 
 type Item = {
   href: string;
@@ -120,7 +119,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'relative hidden shrink-0 border-r border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] md:flex md:flex-col',
+        'sticky top-0 hidden h-screen shrink-0 border-r border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] md:flex md:flex-col',
         'transition-all duration-300 ease-in-out',
         collapsed ? 'w-[68px]' : 'w-64',
       )}
@@ -285,42 +284,33 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Action buttons row */}
-        <div
+        {/* Sign out button */}
+        <button
+          type="button"
+          onClick={logout}
+          title="Sign out"
           className={cn(
-            'flex items-center',
-            collapsed ? 'flex-col gap-1' : 'gap-1',
+            'group relative flex w-full items-center rounded-md text-[rgb(var(--color-muted))] transition-colors hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400',
+            collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-2 py-2',
           )}
         >
-          <NotificationBell />
-          <ThemeToggle />
-          <button
-            type="button"
-            onClick={logout}
-            title="Sign out"
+          <LogOut className="h-4 w-4 shrink-0" />
+          <span
             className={cn(
-              'group relative flex items-center rounded-md text-[rgb(var(--color-muted))] transition-colors hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400',
-              collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-2 py-2',
+              'overflow-hidden whitespace-nowrap text-xs font-medium transition-all duration-300',
+              collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
             )}
           >
-            <LogOut className="h-4 w-4 shrink-0" />
-            <span
-              className={cn(
-                'overflow-hidden whitespace-nowrap text-xs font-medium transition-all duration-300',
-                collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
-              )}
-            >
+            Sign out
+          </span>
+
+          {/* Tooltip when collapsed */}
+          {collapsed && (
+            <span className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-[rgb(var(--color-fg))] px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--color-bg))] shadow-lg group-hover:block">
               Sign out
             </span>
-
-            {/* Tooltip when collapsed */}
-            {collapsed && (
-              <span className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-[rgb(var(--color-fg))] px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--color-bg))] shadow-lg group-hover:block">
-                Sign out
-              </span>
-            )}
-          </button>
-        </div>
+          )}
+        </button>
       </div>
     </aside>
   );
