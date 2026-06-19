@@ -268,11 +268,50 @@ All `/users`, `/roles` and `/masters` routes require the matching permission
 
 ---
 
-## 9. What's NOT done yet
+## 9. Phase 2 - Legal Case Entry Form
+
+After Phase 1 setup:
+
+1. `.\scripts\setup.ps1` to pull new deps and run migration `0002_phase2_cases`.
+2. Open the app, sign in as admin.
+3. **Masters** -> **Customers** -> add at least one (e.g. code `C001`,
+   name "Acme Trading", division Head Office).
+4. Sidebar -> **Transactions** -> **Cases** -> click **New Case**.
+5. Fill the form:
+   - Tick **Criminal** or **Civil** (Both ticks them together)
+   - Pick a Customer, Division, Salesman, Bank
+   - Enter Actual Due / Legal Filing amounts and Deposit Date
+   - Click **+ Add Cheque** to add multiple cheques (number, bank,
+     amount, date, type, bounce reason)
+   - Pick signatories (Sales Mgr, Div Mgr, Auditor, FM, ED, Chairman,
+     Lawyer)
+6. Click **Save Draft** -> the page reloads as `/cases/{id}` and the
+   case number `PUG-LEGAL-2026-0001` is assigned.
+7. Use **Attach Files** to upload supporting docs. Files land in
+   `storage\cases\<id>\` and can be downloaded or removed.
+8. Click **Print** in the action bar -> a new tab opens the branded
+   A4 print view (PUG navy/gold header, signatory grid). Use the
+   browser's Print dialog (Ctrl+P) to print or save as PDF.
+9. Click **Save & Submit** -> status switches to `Submitted` and the
+   form locks. Editing/deleting Drafts is allowed; Submitted is not.
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET/POST /api/v1/cases`
+- `GET/PATCH/DELETE /api/v1/cases/{id}`
+- `POST /api/v1/cases/{id}/submit`
+- `POST/DELETE /api/v1/cases/{id}/attachments[/{att_id}]`
+- `GET /api/v1/cases/{id}/attachments/{att_id}/download`
+- `GET /api/v1/cases/{id}/print` (HTML)
+
+Run `pytest -q` -> 5 tests pass (auth + cases).
+
+---
+
+## 10. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 
-- Case entry form (Phase 2)
 - Approval workflow + status pipeline (Phase 3)
 - Court filing, hearings, expenses (Phase 4)
 - Notifications & Email Log (Phase 5)

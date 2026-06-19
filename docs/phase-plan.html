@@ -807,13 +807,17 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 2</span><strong>Legal Case Entry Form</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 2 ✓</span><strong>Legal Case Entry Form</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>Case model, multi-cheque sub-form (+ button), attachments</li>
-      <li>Auto today's date, dropdowns from masters, signatory selection</li>
-      <li>Save draft / submit, auto-case-number generation</li>
-      <li>Branded print view (header logo, gold accents, signatory grid)</li>
-      <li>Server-side validation + audit-log hook</li>
+      <li>Models: <code>Case</code>, <code>Cheque</code>, <code>CaseAttachment</code>, yearly <code>CaseNoSequence</code></li>
+      <li>Auto case-number generation: <code>PUG-LEGAL-YYYY-NNNN</code> via per-year sequence row</li>
+      <li>Multi-cheque sub-form with <strong>+</strong> button, type select, bounce reason</li>
+      <li>Attachment upload to local <code>storage/cases/&lt;id&gt;/</code>, list / download / delete</li>
+      <li>Signatory dropdowns (Sales Mgr, Div Mgr, Auditor, FM, ED, Chairman, Lawyer); Accountant auto from logged-in user</li>
+      <li>Save Draft &middot; Save &amp; Submit (locks edits after submit; full workflow lands in Phase 3)</li>
+      <li>Division-scoped list, role-gated by <code>cases:read</code> / <code>cases:create</code></li>
+      <li>Branded HTML print view (gold/navy header, signatory grid, A4-tuned CSS); PDF export comes in Phase 6</li>
+      <li>Migration <code>0002_phase2_cases</code>; tests for create/submit/edit-lock/print</li>
     </ul>
   </div>
 

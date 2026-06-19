@@ -1,0 +1,171 @@
+"""Case, Cheque, CaseAttachment, and yearly Case-No sequence."""
+
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import (
+    Boolean,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db.base import Base, TimestampMixin
+
+# ---- Status / stage enums (kept as strings; full workflow in Phase 3) ----
+CASE_STATUS_DRAFT = "Draft"
+CASE_STATUS_SUBMITTED = "Submitted"
+
+STAGE_ACCOUNTANT = "Accountant"
+STAGE_SALES_MGR = "Sales Manager"
+STAGE_DIV_MGR = "Division Manager"
+STAGE_AUDIT = "Audit"
+STAGE_FM = "Finance Manager"
+STAGE_ED = "Executive Director"
+STAGE_CHAIRMAN = "Chairman / MD"
+STAGE_LAWYER = "Lawyer"
+STAGE_CLOSED = "Closed"
+
+
+class Case(Base, TimestampMixin):
+    __tablename__ = "cases"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_no: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+
+    # Parties / commercials
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False
+    )
+    division_id: Mapped[int] = mapped_column(
+        ForeignKey("divisions.id", ondelete="RESTRICT"), nullable=False
+    )
+    salesman_id: Mapped[int | None] = mapped_column(
+        ForeignKey("salesmen.id", ondelete="SET NULL"), nullable=True
+    )
+    bank_id: Mapped[int | None] = mapped_column(
+        ForeignKey("banks.id", ondelete="SET NULL"), nullable=True
+    )
+    case_type_id: Mapped[int | None] = mapped_column(
+        ForeignKey("case_types.id", ondelete="SET NULL"), nullable=True
+    )
+
+    customer_type: Mapped[str] = mapped_column(String(50), default="Retail")
+    actual_due_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=0, nullable=False
+    )
+    legal_filing_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=0, nullable=False
+    )
+    deposit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # Case filing checkboxes from the original paper form
+    is_criminal: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_civil: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    commands: Mapped[str] = mapped_column(String(2000), default="")
+
+    # Signatory selections (set on the form before submit)
+    sales_manager_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    division_manager_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    auditor_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    fm_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    ed_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    chairman_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    lawyer_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lawyers.id", ondelete="SET NULL"), nullable=True
+    )
+
+    # Workflow tracking
+    status: Mapped[str] = mapped_column(String(40), default=CASE_STATUS_DRAFT, nullable=False)
+    current_stage: Mapped[str] = mapped_column(
+        String(40), default=STAGE_ACCOUNTANT, nullable=False
+    )
+
+    # Authorship
+    created_by_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    cheques: Mapped[list["Cheque"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="Cheque.id",
+        lazy="selectin",
+    )
+    attachments: Mapped[list["CaseAttachment"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="CaseAttachment.id",
+        lazy="selectin",
+    )
+
+
+class Cheque(Base, TimestampMixin):
+    __tablename__ = "cheques"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[int] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+
+    cheque_number: Mapped[str] = mapped_column(String(50), nullable=False)
+    bank_id: Mapped[int | None] = mapped_column(
+        ForeignKey("banks.id", ondelete="SET NULL"), nullable=True
+    )
+    bank_name_text: Mapped[str] = mapped_column(String(200), default="")  # free text fallback
+    amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), default=0, nullable=False)
+    cheque_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cheque_type: Mapped[str] = mapped_column(String(30), default="Normal")
+    # Normal | Guarantee | PDC | Post-Dated
+    bounce_reason: Mapped[str] = mapped_column(String(300), default="")
+
+    case: Mapped[Case] = relationship(back_populates="cheques")
+
+
+class CaseAttachment(Base, TimestampMixin):
+    __tablename__ = "case_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[int] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    category: Mapped[str] = mapped_column(String(50), default="Supporting Document")
+    uploaded_by_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    case: Mapped[Case] = relationship(back_populates="attachments")
+
+
+class CaseNoSequence(Base):
+    """Per-year counter used to mint case numbers like PUG-LEGAL-2026-0001."""
+
+    __tablename__ = "case_no_sequence"
+    __table_args__ = (UniqueConstraint("year", name="uq_case_no_sequence_year"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    last_number: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

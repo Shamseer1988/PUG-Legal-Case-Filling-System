@@ -1,6 +1,7 @@
-"""Aggregate models import — extended in subsequent phases."""
+"""Aggregate models import."""
 
 from app.db.base import Base
+from app.models.case import Case, CaseAttachment, CaseNoSequence, Cheque
 from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
 from app.models.user import Role, User, UserDivisionMap
 
@@ -15,4 +16,8 @@ __all__ = [
     "Customer",
     "Lawyer",
     "CaseType",
+    "Case",
+    "Cheque",
+    "CaseAttachment",
+    "CaseNoSequence",
 ]
