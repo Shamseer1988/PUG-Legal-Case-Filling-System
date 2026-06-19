@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useState } from 'react';
 import {
   LayoutDashboard,
   FileText,
@@ -18,6 +19,9 @@ import {
   Banknote,
   Mail,
   BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasPermission, useAuthStore } from '@/lib/auth';
@@ -81,20 +85,46 @@ export function Sidebar() {
   const pathname = usePathname();
   const me = useAuthStore((s) => s.me);
 
+  // Sidebar collapsed state (icon-only)
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Section expanded state — all sections start expanded
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>(
+    () => Object.fromEntries(GROUPS.map((g) => [g.title, true])),
+  );
+
+  function toggleSection(title: string) {
+    setExpandedSections((prev) => ({ ...prev, [title]: !prev[title] }));
+  }
+
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] md:block">
-      <div className="flex h-16 items-center gap-3 border-b border-[rgb(var(--color-border))] px-5">
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-pug-gold-500 text-xs font-extrabold text-pug-navy-800">
+    <aside
+      className={cn(
+        'relative hidden shrink-0 border-r border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] md:flex md:flex-col',
+        'transition-all duration-300 ease-in-out',
+        collapsed ? 'w-[68px]' : 'w-64',
+      )}
+    >
+      {/* Brand header */}
+      <div className="flex h-16 items-center gap-3 border-b border-[rgb(var(--color-border))] px-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pug-gold-500 text-xs font-extrabold text-pug-navy-800">
           PUG
         </div>
-        <div className="text-sm font-semibold leading-tight">
+        <div
+          className={cn(
+            'overflow-hidden text-sm font-semibold leading-tight whitespace-nowrap transition-all duration-300',
+            collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+          )}
+        >
           Legal Case
           <div className="text-[10px] uppercase tracking-widest text-pug-gold-600 dark:text-pug-gold-400">
             Control System
           </div>
         </div>
       </div>
-      <nav className="p-3">
+
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden p-3">
         {GROUPS.map((g) => {
           const visible = g.items.filter((it) => {
             if (it.super) return !!me?.is_super;
@@ -102,37 +132,113 @@ export function Sidebar() {
             return true;
           });
           if (visible.length === 0) return null;
+
+          const isExpanded = expandedSections[g.title] ?? true;
+
           return (
-            <div key={g.title} className="mb-4">
-              <div className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-widest text-[rgb(var(--color-muted))]">
-                {g.title}
+            <div key={g.title} className="mb-2">
+              {/* Section header — clickable to expand/collapse */}
+              <button
+                type="button"
+                onClick={() => !collapsed && toggleSection(g.title)}
+                className={cn(
+                  'group flex w-full items-center rounded-md px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[rgb(var(--color-muted))] transition-colors hover:text-[rgb(var(--color-fg))]',
+                  collapsed && 'justify-center',
+                )}
+                title={collapsed ? g.title : undefined}
+              >
+                {!collapsed && (
+                  <>
+                    <ChevronDown
+                      className={cn(
+                        'mr-1.5 h-3 w-3 shrink-0 transition-transform duration-200',
+                        !isExpanded && '-rotate-90',
+                      )}
+                    />
+                    <span className="flex-1 text-left">{g.title}</span>
+                  </>
+                )}
+                {collapsed && (
+                  <div className="h-px w-6 bg-[rgb(var(--color-border))]" />
+                )}
+              </button>
+
+              {/* Menu items with animated expand/collapse */}
+              <div
+                className={cn(
+                  'overflow-hidden transition-all duration-200 ease-in-out',
+                  !collapsed && !isExpanded ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100',
+                )}
+              >
+                <ul className={cn(collapsed ? 'mt-1 space-y-1' : 'mt-0.5')}>
+                  {visible.map((it) => {
+                    const Icon = it.icon;
+                    const active = pathname === it.href || pathname.startsWith(it.href + '/');
+                    return (
+                      <li key={it.href}>
+                        <Link
+                          href={it.href}
+                          title={collapsed ? it.label : undefined}
+                          className={cn(
+                            'group relative flex items-center rounded-md text-sm transition-colors duration-150',
+                            collapsed
+                              ? 'justify-center px-2 py-2'
+                              : 'gap-2 px-2 py-2',
+                            active
+                              ? 'bg-pug-gold-500/15 font-semibold text-pug-gold-700 dark:text-pug-gold-300'
+                              : 'text-[rgb(var(--color-fg))] hover:bg-[rgb(var(--color-border))]/40',
+                          )}
+                        >
+                          <Icon className="h-4 w-4 shrink-0" />
+                          <span
+                            className={cn(
+                              'overflow-hidden whitespace-nowrap transition-all duration-300',
+                              collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+                            )}
+                          >
+                            {it.label}
+                          </span>
+
+                          {/* Tooltip on hover when collapsed */}
+                          {collapsed && (
+                            <span className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-[rgb(var(--color-fg))] px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--color-bg))] shadow-lg group-hover:block">
+                              {it.label}
+                            </span>
+                          )}
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
-              <ul>
-                {visible.map((it) => {
-                  const Icon = it.icon;
-                  const active = pathname === it.href || pathname.startsWith(it.href + '/');
-                  return (
-                    <li key={it.href}>
-                      <Link
-                        href={it.href}
-                        className={cn(
-                          'flex items-center gap-2 rounded-md px-2 py-2 text-sm transition',
-                          active
-                            ? 'bg-pug-gold-500/15 font-semibold text-pug-gold-700 dark:text-pug-gold-300'
-                            : 'text-[rgb(var(--color-fg))] hover:bg-[rgb(var(--color-border))]/40',
-                        )}
-                      >
-                        <Icon className="h-4 w-4" />
-                        {it.label}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
             </div>
           );
         })}
       </nav>
+
+      {/* Collapse / Expand toggle button at the bottom */}
+      <div className="border-t border-[rgb(var(--color-border))] p-3">
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className={cn(
+            'flex w-full items-center rounded-md px-2 py-2 text-sm text-[rgb(var(--color-muted))] transition-colors hover:bg-[rgb(var(--color-border))]/40 hover:text-[rgb(var(--color-fg))]',
+            collapsed ? 'justify-center' : 'gap-2',
+          )}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4 shrink-0" />
+          ) : (
+            <>
+              <ChevronLeft className="h-4 w-4 shrink-0" />
+              <span className="overflow-hidden whitespace-nowrap text-xs font-medium">
+                Collapse
+              </span>
+            </>
+          )}
+        </button>
+      </div>
     </aside>
   );
 }
