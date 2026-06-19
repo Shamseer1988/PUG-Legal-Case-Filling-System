@@ -106,7 +106,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 4     | Court Filing, Hearings, Expenses       | ✅ Done     |
 | 5     | Notifications & Email Log              | ✅ Done     |
 | 6     | Reports + Excel/PDF/Print Export       | ✅ Done     |
-| 7     | Scheduled Reporting via Email          | Pending     |
+| 7     | Scheduled Reporting via Email          | ✅ Done     |
 | 8     | Audit Log (Tamper-Evident)             | Pending     |
 | 9     | Backup & Restore (PugFin parity)       | Pending     |
 | 10    | System Settings & Admin Console        | Pending     |

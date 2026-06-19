@@ -19,6 +19,7 @@ import {
   Banknote,
   Mail,
   BarChart3,
+  CalendarClock,
   ChevronLeft,
   ChevronRight,
   ChevronDown,
@@ -57,7 +58,15 @@ const GROUPS: Group[] = [
   },
   {
     title: 'Insights',
-    items: [{ href: '/reports', label: 'Reports', icon: BarChart3, perm: 'cases:read' }],
+    items: [
+      { href: '/reports', label: 'Reports', icon: BarChart3, perm: 'cases:read' },
+      {
+        href: '/schedules',
+        label: 'Scheduled Reports',
+        icon: CalendarClock,
+        perm: 'cases:read',
+      },
+    ],
   },
   {
     title: 'Masters',

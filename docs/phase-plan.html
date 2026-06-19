@@ -876,13 +876,17 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 7</span><strong>Scheduled Reporting via Email</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 7 ✓</span><strong>Scheduled Reporting via Email</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>ScheduledReport model + cron parser + APScheduler/Celery beat</li>
-      <li>Create-schedule UI: report, params, recipients, formats, cadence</li>
-      <li>Branded HTML summary + PDF/Excel attachments</li>
-      <li>Run history, pause/resume, run-now</li>
-      <li>Failure retries &amp; alert to admin</li>
+      <li><code>ScheduledReport</code> + <code>ScheduledReportRun</code> models with cron, recipients, params, formats, last/next run state</li>
+      <li>APScheduler <code>BackgroundScheduler</code> ticks every 60s in the FastAPI lifespan; due schedules execute synchronously</li>
+      <li>Cron via <code>CronTrigger.from_crontab</code> (UTC); next-run timestamp recomputed after every run</li>
+      <li>Branded <code>scheduled_report_email.html</code>: KPI block, top-rows preview, action button, attachments listing</li>
+      <li><code>email_service</code> extended to accept attachments (filename + blob + mime)</li>
+      <li>Run-now produces the same email as a scheduled run (Excel and/or PDF blobs attached)</li>
+      <li>Endpoints: <code>GET / POST / PATCH / DELETE /scheduled-reports</code>, <code>{id}/pause | resume | run-now | history</code></li>
+      <li>UI: <code>/schedules</code> list with Run / Pause / Resume / Delete; <code>/schedules/new</code> + <code>/schedules/[id]</code> form with cron presets, parameter form mirroring the report descriptor, recipient lists, format toggles, status panel and run history table</li>
+      <li>Migration <code>0006_phase7_scheduled_reports</code>; tests for CRUD, bad cron, unknown report, run-now history, pause/resume, delete</li>
     </ul>
   </div>
 

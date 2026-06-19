@@ -68,7 +68,13 @@ def queue_email(
     event: str = "",
     related_case_id: int | None = None,
     related_user_id: int | None = None,
+    attachments: list[tuple[str, bytes, str]] | None = None,
 ) -> EmailLog:
+    """Send an email via SMTP (or log-only in console mode).
+
+    ``attachments`` is a list of (filename, blob, mime). Attachments are NOT
+    persisted to the database, so they cannot be replayed by ``resend``.
+    """
     body_html, body_text = render_email(template, {**context, "subject": subject})
     log = EmailLog(
         to_emails=",".join([e for e in to_emails if e]),
@@ -85,7 +91,7 @@ def queue_email(
     )
     db.add(log)
     db.flush()
-    _deliver(db, log)
+    _deliver(db, log, attachments=attachments)
     db.commit()
     db.refresh(log)
     return log
@@ -95,13 +101,19 @@ def resend(db: Session, log: EmailLog) -> EmailLog:
     log.status = EMAIL_STATUS_QUEUED
     log.error = ""
     db.flush()
-    _deliver(db, log)
+    # Attachments aren't persisted; resend goes out without them.
+    _deliver(db, log, attachments=None)
     db.commit()
     db.refresh(log)
     return log
 
 
-def _deliver(db: Session, log: EmailLog) -> None:
+def _deliver(
+    db: Session,
+    log: EmailLog,
+    *,
+    attachments: list[tuple[str, bytes, str]] | None = None,
+) -> None:
     log.attempts += 1
     to_list = [e.strip() for e in log.to_emails.split(",") if e.strip()]
     if not to_list:
@@ -110,11 +122,15 @@ def _deliver(db: Session, log: EmailLog) -> None:
         return
 
     if not settings.smtp_host:
+        attach_note = (
+            f" attachments={[a[0] for a in attachments]}" if attachments else ""
+        )
         logger.info(
-            "[email/console] to=%s subject=%s template=%s",
+            "[email/console] to={} subject={} template={}{}",
             to_list,
             log.subject,
             log.template_name,
+            attach_note,
         )
         log.status = EMAIL_STATUS_SENT
         log.sent_at = datetime.now(timezone.utc)
@@ -130,6 +146,14 @@ def _deliver(db: Session, log: EmailLog) -> None:
         msg["Subject"] = log.subject
         msg.set_content(log.body_text or " ")
         msg.add_alternative(log.body_html, subtype="html")
+        for filename, blob, mime in attachments or []:
+            maintype, _, subtype = (mime or "application/octet-stream").partition("/")
+            msg.add_attachment(
+                blob,
+                maintype=maintype or "application",
+                subtype=subtype or "octet-stream",
+                filename=filename,
+            )
 
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as s:
             s.ehlo()
@@ -151,4 +175,4 @@ def _deliver(db: Session, log: EmailLog) -> None:
     except Exception as e:  # pragma: no cover (network errors in real env)
         log.status = EMAIL_STATUS_FAILED
         log.error = f"{type(e).__name__}: {e}"
-        logger.warning("Email send failed: %s", log.error)
+        logger.warning("Email send failed: {}", log.error)

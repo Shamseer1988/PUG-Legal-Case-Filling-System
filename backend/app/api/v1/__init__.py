@@ -13,6 +13,7 @@ from app.api.v1 import (
     notifications,
     reports,
     roles,
+    scheduled_reports,
     users,
 )
 
@@ -30,3 +31,4 @@ api_router.include_router(court.hearings_router)
 api_router.include_router(notifications.router)
 api_router.include_router(email_log.router)
 api_router.include_router(reports.router)
+api_router.include_router(scheduled_reports.router)

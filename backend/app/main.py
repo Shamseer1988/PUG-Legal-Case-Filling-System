@@ -18,8 +18,15 @@ async def lifespan(app: FastAPI):
     settings.storage_path.mkdir(parents=True, exist_ok=True)
     settings.backup_path.mkdir(parents=True, exist_ok=True)
     logger.info(f"{settings.app_name} starting (env={settings.app_env}, v={__version__})")
-    yield
-    logger.info(f"{settings.app_name} shutting down")
+    # Background scheduler for scheduled reports (Phase 7)
+    from app.services import scheduler_service
+
+    scheduler_service.start()
+    try:
+        yield
+    finally:
+        scheduler_service.stop()
+        logger.info(f"{settings.app_name} shutting down")
 
 
 app = FastAPI(

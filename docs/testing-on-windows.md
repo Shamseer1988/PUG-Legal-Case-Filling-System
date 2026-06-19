@@ -472,7 +472,42 @@ API endpoints visible at http://127.0.0.1:8000/docs:
 
 ---
 
-## 14. What's NOT done yet
+## 14. Phase 7 - Scheduled Reporting via Email
+
+After running migration `0006_phase7_scheduled_reports`:
+
+1. Sidebar **Insights -> Scheduled Reports -> New Schedule**.
+2. Pick a report (e.g. Case Register), enter a name, paste a cron
+   expression or pick a preset (e.g. "Every Monday at 9:00 UTC").
+3. Enter one or more recipient emails (any address works in console
+   mode), tick **PDF** and/or **Excel**, save.
+4. Hit **Save & Run Now** -> the backend renders the report, emails
+   the recipients with the branded HTML summary + attached file(s),
+   records an EmailLog entry, and adds a row to the schedule's
+   **Run History**.
+5. Open **Admin -> Email Log** and click the latest row to see the
+   rendered email body (KPI block, top-rows preview, attachments
+   listed).
+6. In console mode (`SMTP_HOST` blank in `backend\.env`), the email
+   is logged to the backend console; status still shows `Sent`.
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET/POST /api/v1/scheduled-reports`
+- `GET/PATCH/DELETE /api/v1/scheduled-reports/{id}`
+- `POST /api/v1/scheduled-reports/{id}/{pause|resume|run-now}`
+- `GET /api/v1/scheduled-reports/{id}/history`
+
+Run `pytest -q` -> 28 tests pass (auth + cases + workflow + court +
+notifications + reports + scheduled reports).
+
+The APScheduler tick runs every 60 seconds inside the FastAPI process,
+so to verify a real cron fire you can set a schedule to `*/2 * * * *`
+(every 2 minutes) and wait. Cron times are interpreted in **UTC**.
+
+---
+
+## 15. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 
