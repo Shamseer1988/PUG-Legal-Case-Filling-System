@@ -103,7 +103,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 1     | Auth, RBAC, Masters                    | ✅ Done     |
 | 2     | Legal Case Entry Form                  | ✅ Done     |
 | 3     | Approval Workflow Engine               | ✅ Done     |
-| 4     | Court Filing, Hearings, Expenses       | Pending     |
+| 4     | Court Filing, Hearings, Expenses       | ✅ Done     |
 | 5     | Notifications & Email Log              | Pending     |
 | 6     | Reports + Excel/PDF/Print Export       | Pending     |
 | 7     | Scheduled Reporting via Email          | Pending     |

@@ -14,6 +14,8 @@ import {
   Tag,
   ShieldCheck,
   Settings,
+  Calendar,
+  Banknote,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasPermission, useAuthStore } from '@/lib/auth';
@@ -38,6 +40,13 @@ const GROUPS: Group[] = [
     items: [
       { href: '/cases', label: 'Cases', icon: FileText, perm: 'cases:read' },
       { href: '/approvals', label: 'Approvals Inbox', icon: Briefcase, perm: 'cases:read' },
+      { href: '/hearings', label: 'Hearings Calendar', icon: Calendar, perm: 'cases:read' },
+      {
+        href: '/cash-requests',
+        label: 'Cash Requests',
+        icon: Banknote,
+        perm: 'cases:read',
+      },
     ],
   },
   {

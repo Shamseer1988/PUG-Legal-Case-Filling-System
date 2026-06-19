@@ -349,7 +349,57 @@ Run `pytest -q` - 9 tests pass (auth + cases + workflow).
 
 ---
 
-## 11. What's NOT done yet
+## 11. Phase 4 - Court Filing, Hearings, Cash Requests
+
+After running migration `0004_phase4_court`:
+
+1. Create a case and walk it through the full approval chain (admin can act
+   at every stage). Once Chairman / MD approves, status becomes
+   **Approved** and three new panels appear at the bottom of the case
+   page: **Court Filing**, **Hearings**, **Cash Requests & Expenses**.
+
+2. **Court Filing**:
+   - Click **Record Filing**
+   - Enter Police Case No. (e.g. `POL/2026/12345`), Court Case No.
+     (`COURT/2026/9876`), filed court, filed date, notes
+   - Save -> case status flips to **Filed**, and the timeline gets a
+     `court_filed` entry. Use the case **Attachments** section to
+     upload the govt acknowledgement scan.
+
+3. **Hearings**:
+   - **Add Hearing** -> date/time, type, location, outcome, optional
+     next-hearing date
+   - The row shows on the case and on the sidebar **Hearings Calendar**
+
+4. **Cash Requests & Expenses**:
+   - Lawyer flow: **Request Cash** -> amount + purpose -> status `Requested`
+   - FM flow: **Approve** (optional comment) or **Reject** (reason required)
+   - Accountant flow: **Pay** with a payment reference -> status `Paid`
+   - The header pill shows live totals (Paid / Approved / Open count)
+
+5. **Sidebar Hearings Calendar** (`/hearings`):
+   - Lists hearings + next-hearing dates within 30/60/90/180-day range
+   - Grouped by date with case-no, type, location
+
+6. **Sidebar Cash Requests** (`/cash-requests`):
+   - Cross-case inbox filtered by status (default Requested)
+   - Approve / Reject / Pay actions from here too
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET/POST/PATCH /api/v1/cases/{id}/court-filing`
+- `GET/POST/PATCH/DELETE /api/v1/cases/{id}/hearings[/{hid}]`
+- `GET /api/v1/cases/{id}/spend-summary`
+- `GET/POST /api/v1/cases/{id}/cash-requests`
+- `GET /api/v1/cash-requests?only=...`
+- `POST /api/v1/cash-requests/{id}/{approve|reject|pay}`
+- `GET /api/v1/hearings/calendar?days=60`
+
+Run `pytest -q` -> 13 tests pass (auth + cases + workflow + court).
+
+---
+
+## 12. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 

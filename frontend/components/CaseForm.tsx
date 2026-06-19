@@ -8,6 +8,9 @@ import { useAuthStore } from '@/lib/auth';
 import { useMasterOptions } from '@/lib/useMasters';
 import { CaseTimeline } from '@/components/CaseTimeline';
 import { CaseActions } from '@/components/CaseActions';
+import { CourtFilingPanel } from '@/components/CourtFilingPanel';
+import { HearingsPanel } from '@/components/HearingsPanel';
+import { CashRequestsPanel } from '@/components/CashRequestsPanel';
 
 type ChequeDraft = {
   cheque_number: string;
@@ -252,6 +255,18 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             currentStage={meta.current_stage}
             onDone={() => setReloadKey((k) => k + 1)}
           />
+          {/* Phase 4 panels - visible once the case reaches Approved */}
+          {(meta.status === 'Approved' || meta.status === 'Filed') && (
+            <>
+              <CourtFilingPanel
+                caseId={meta.id}
+                status={meta.status}
+                onChange={() => setReloadKey((k) => k + 1)}
+              />
+              <HearingsPanel caseId={meta.id} status={meta.status} />
+              <CashRequestsPanel caseId={meta.id} status={meta.status} />
+            </>
+          )}
         </>
       )}
 

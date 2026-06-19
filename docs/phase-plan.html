@@ -836,13 +836,14 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 4</span><strong>Court Filing, Hearings, Expenses</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 4 ✓</span><strong>Court Filing, Hearings, Expenses</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>Court filing: Police No., Court No., filed date, acknowledgment upload</li>
-      <li>Hearing tracker: next date/time/location, commands, attachments</li>
-      <li>Lawyer cash request → FM approval → Accountant payment → receipt</li>
-      <li>Per-case expense ledger &amp; total spend rollup</li>
-      <li>Calendar view of upcoming hearings</li>
+      <li><code>CourtFiling</code> (Police No., Court No., filed court, filed date, ack attachment, notes); recording it promotes case status to <strong>Filed</strong></li>
+      <li><code>Hearing</code> log with date / location / type / outcome / next-hearing date / attachment; permission-gated by <code>hearings:write</code></li>
+      <li><code>CashRequest</code> lifecycle: Lawyer requests &rarr; FM approves or rejects &rarr; Accountant pays with reference/receipt</li>
+      <li>Per-case <strong>Spend Summary</strong> rollup (requested / approved / paid / open count)</li>
+      <li>Sidebar <strong>Hearings Calendar</strong> (next 30/60/90/180 days, grouped by date) and <strong>Cash Requests</strong> inbox with status filter</li>
+      <li>Migration <code>0004_phase4_court</code>; tests for court-filing-promotes-status, calendar, full cash-request lifecycle, and blocked-before-approval</li>
     </ul>
   </div>
 
