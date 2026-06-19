@@ -1,7 +1,7 @@
 """Aggregate models import."""
 
 from app.db.base import Base
-from app.models.case import Case, CaseAttachment, CaseNoSequence, Cheque
+from app.models.case import Case, CaseAttachment, CaseNoSequence, CaseStatusUpdate, Cheque
 from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
 from app.models.user import Role, User, UserDivisionMap
 
@@ -20,4 +20,5 @@ __all__ = [
     "Cheque",
     "CaseAttachment",
     "CaseNoSequence",
+    "CaseStatusUpdate",
 ]

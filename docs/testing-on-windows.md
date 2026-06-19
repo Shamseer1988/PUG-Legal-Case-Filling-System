@@ -308,11 +308,51 @@ Run `pytest -q` -> 5 tests pass (auth + cases).
 
 ---
 
-## 10. What's NOT done yet
+## 10. Phase 3 - Approval Workflow
+
+After running migration `0003_phase3_workflow`:
+
+1. Create a case (Phase 2 flow) and `Save & Submit`.
+2. Open the case detail page (`/cases/{id}`) - you now see the
+   **Workflow** flow strip at the top showing each stage as a chip
+   (Accountant -> Sales Manager -> Division Manager -> Audit ->
+   Finance Manager -> Executive Director -> Chairman / MD -> Lawyer).
+   The current stage glows gold; completed stages are green ticks.
+3. Below the strip is the **History** log with one row per
+   transition (submitted, approved, etc.) - actor, timestamp,
+   comment.
+4. The **Actions at <stage>** card offers:
+   - **Approve** -> advances to the next stage
+   - **Request Clarification** (comment required) -> status becomes
+     "Clarification Requested" and the case returns to Accountant
+   - **Reject** (comment required) -> terminal "Rejected"
+5. As the Accountant on a clarification-requested case, the actions
+   card shows **Resubmit** instead, returning the case to the stage
+   that asked the question.
+6. Open the sidebar **Approvals Inbox**:
+   - Lists every case waiting for a stage you can act on
+   - Toggle **Assigned to me only** to filter by the user picked as
+     that stage's signatory on the entry form
+   - Overdue cases show a red badge (SLA hours: 24-72 per stage)
+7. The default admin (super) can act at every stage, so you can drive
+   a case through the whole chain with one login.
+
+### Phase 3 API endpoints
+
+- `POST /api/v1/cases/{id}/transition` body `{action,comment}` -
+  actions: `approve` | `reject` | `request_clarification` | `resubmit`
+- `GET /api/v1/cases/{id}/timeline`
+- `GET /api/v1/approvals/inbox`
+- `GET /api/v1/approvals/workflow` - stage descriptor (used by UI)
+
+Run `pytest -q` - 9 tests pass (auth + cases + workflow).
+
+---
+
+## 11. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 
-- Approval workflow + status pipeline (Phase 3)
 - Court filing, hearings, expenses (Phase 4)
 - Notifications & Email Log (Phase 5)
 - Excel / PDF / Print export (Phase 6)

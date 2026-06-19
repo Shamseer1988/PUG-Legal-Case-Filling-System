@@ -17,6 +17,7 @@ from app.core.permissions import CASES_CREATE, CASES_READ
 from app.db.session import get_db
 from app.models.case import CASE_STATUS_DRAFT, Case, CaseAttachment
 from app.models.user import User
+from app.schemas.approval import TimelineEntry, TransitionRequest
 from app.schemas.case import (
     AttachmentRead,
     CaseCreate,
@@ -24,7 +25,7 @@ from app.schemas.case import (
     CaseRead,
     CaseUpdate,
 )
-from app.services import case_service, render, storage
+from app.services import case_service, render, storage, workflow_service
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -101,10 +102,72 @@ def submit_case(
 ) -> CaseRead:
     case = _get_case_or_404(db, user, case_id)
     try:
-        case = case_service.submit_case(db, case)
+        case = case_service.submit_case(db, case, user)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return CaseRead.model_validate(case)
+
+
+@router.post("/{case_id}/transition", response_model=CaseRead)
+def transition_case(
+    case_id: int,
+    payload: TransitionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CaseRead:
+    case = _get_case_or_404(db, user, case_id)
+    if not workflow_service.can_act(user, case):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Not authorised to act at stage '{case.current_stage}'",
+        )
+    try:
+        if payload.action == "approve":
+            case = workflow_service.approve(db, case, user, payload.comment)
+        elif payload.action == "reject":
+            case = workflow_service.reject(db, case, user, payload.comment)
+        elif payload.action == "request_clarification":
+            case = workflow_service.request_clarification(db, case, user, payload.comment)
+        elif payload.action == "resubmit":
+            case = workflow_service.resubmit(db, case, user, payload.comment)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {payload.action}")
+    except workflow_service.WorkflowError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return CaseRead.model_validate(case)
+
+
+@router.get("/{case_id}/timeline", response_model=list[TimelineEntry])
+def case_timeline(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> list[TimelineEntry]:
+    case = _get_case_or_404(db, user, case_id)
+    from app.models.user import User as UserModel
+
+    actor_ids = {t.actor_id for t in case.timeline}
+    actors: dict[int, str] = {}
+    if actor_ids:
+        for u in db.query(UserModel).filter(UserModel.id.in_(actor_ids)).all():
+            actors[u.id] = u.full_name
+    out: list[TimelineEntry] = []
+    for t in case.timeline:
+        out.append(
+            TimelineEntry(
+                id=t.id,
+                action_type=t.action_type,
+                from_status=t.from_status,
+                to_status=t.to_status,
+                from_stage=t.from_stage,
+                to_stage=t.to_stage,
+                actor_id=t.actor_id,
+                actor_name=actors.get(t.actor_id, ""),
+                comment=t.comment,
+                created_at=t.created_at,
+            )
+        )
+    return out
 
 
 @router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -822,13 +822,16 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 3</span><strong>Approval Workflow Engine</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 3 ✓</span><strong>Approval Workflow Engine</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>Configurable stage engine (Accountant → … → Lawyer)</li>
-      <li>Approval Inbox per role, approve / reject / request-clarification with command</li>
-      <li>SLA timers, auto-escalation</li>
-      <li>Status timeline per case (visual flow chart)</li>
-      <li>Audit log entries per transition</li>
+      <li>6-stage approval chain: Sales Mgr → Div Mgr → Audit → FM → ED → Chairman/MD, then on to Lawyer</li>
+      <li>Statuses: Draft → Submitted → In Review → Approved / Rejected / Clarification Requested</li>
+      <li><code>CaseStatusUpdate</code> log table records every transition (actor, comment, from/to stage &amp; status)</li>
+      <li>Per-stage permissions (<code>cases:approve:sales_mgr</code>, <code>...:audit</code>, <code>...:fm</code>, <code>...:ed</code>, <code>...:final</code>) and SLA hours, with overdue badge</li>
+      <li><code>POST /cases/{id}/transition</code> handles approve / reject / request_clarification / resubmit with comment</li>
+      <li><code>GET /approvals/inbox</code> returns cases waiting for the current user's stage; "Assigned to me" filter for the configured signatory</li>
+      <li><code>GET /cases/{id}/timeline</code> + visual flow strip + entry log on the case page</li>
+      <li>Migration <code>0003_phase3_workflow</code>; happy-path + clarify/resubmit + reject + inbox tests</li>
     </ul>
   </div>
 

@@ -102,7 +102,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 0     | Foundation & Scaffolding               | ✅ Done     |
 | 1     | Auth, RBAC, Masters                    | ✅ Done     |
 | 2     | Legal Case Entry Form                  | ✅ Done     |
-| 3     | Approval Workflow Engine               | Pending     |
+| 3     | Approval Workflow Engine               | ✅ Done     |
 | 4     | Court Filing, Hearings, Expenses       | Pending     |
 | 5     | Notifications & Email Log              | Pending     |
 | 6     | Reports + Excel/PDF/Print Export       | Pending     |

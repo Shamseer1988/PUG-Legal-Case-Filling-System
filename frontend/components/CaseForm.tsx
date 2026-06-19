@@ -6,6 +6,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { useMasterOptions } from '@/lib/useMasters';
+import { CaseTimeline } from '@/components/CaseTimeline';
+import { CaseActions } from '@/components/CaseActions';
 
 type ChequeDraft = {
   cheque_number: string;
@@ -111,6 +113,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
 
   const isEdit = caseId !== undefined;
   const locked = !!meta && meta.status !== 'Draft';
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!isEdit) return;
@@ -123,7 +126,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
         setErr((e as ApiError).message);
       }
     })();
-  }, [caseId, isEdit]);
+  }, [caseId, isEdit, reloadKey]);
 
   const totalCheques = useMemo(
     () => draft.cheques.reduce((s, c) => s + Number(c.amount || 0), 0),
@@ -233,6 +236,23 @@ export function CaseForm({ caseId }: { caseId?: number }) {
         <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
           {info}
         </div>
+      )}
+
+      {/* Workflow controls (only after Draft -> Submitted) */}
+      {isEdit && meta && meta.status !== 'Draft' && (
+        <>
+          <CaseTimeline
+            caseId={meta.id}
+            currentStage={meta.current_stage}
+            status={meta.status}
+          />
+          <CaseActions
+            caseId={meta.id}
+            status={meta.status}
+            currentStage={meta.current_stage}
+            onDone={() => setReloadKey((k) => k + 1)}
+          />
+        </>
       )}
 
       <Card title="Case Filing">

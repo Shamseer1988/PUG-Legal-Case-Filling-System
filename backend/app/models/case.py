@@ -17,9 +17,15 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
 
-# ---- Status / stage enums (kept as strings; full workflow in Phase 3) ----
+# ---- Status / stage constants ----
 CASE_STATUS_DRAFT = "Draft"
 CASE_STATUS_SUBMITTED = "Submitted"
+CASE_STATUS_IN_REVIEW = "In Review"
+CASE_STATUS_CLARIFICATION = "Clarification Requested"
+CASE_STATUS_APPROVED = "Approved"
+CASE_STATUS_REJECTED = "Rejected"
+CASE_STATUS_FILED = "Filed"  # set after court filing (Phase 4)
+CASE_STATUS_CLOSED = "Closed"
 
 STAGE_ACCOUNTANT = "Accountant"
 STAGE_SALES_MGR = "Sales Manager"
@@ -30,6 +36,14 @@ STAGE_ED = "Executive Director"
 STAGE_CHAIRMAN = "Chairman / MD"
 STAGE_LAWYER = "Lawyer"
 STAGE_CLOSED = "Closed"
+
+# Action types recorded on CaseStatusUpdate
+ACTION_SUBMIT = "submit"
+ACTION_APPROVE = "approve"
+ACTION_REJECT = "reject"
+ACTION_REQUEST_CLARIFICATION = "request_clarification"
+ACTION_RESUBMIT = "resubmit"
+ACTION_COMMENT = "comment"
 
 
 class Case(Base, TimestampMixin):
@@ -98,6 +112,10 @@ class Case(Base, TimestampMixin):
     current_stage: Mapped[str] = mapped_column(
         String(40), default=STAGE_ACCOUNTANT, nullable=False
     )
+    stage_entered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Authorship
     created_by_id: Mapped[int] = mapped_column(
@@ -115,6 +133,12 @@ class Case(Base, TimestampMixin):
         back_populates="case",
         cascade="all, delete-orphan",
         order_by="CaseAttachment.id",
+        lazy="selectin",
+    )
+    timeline: Mapped[list["CaseStatusUpdate"]] = relationship(
+        back_populates="case",
+        cascade="all, delete-orphan",
+        order_by="CaseStatusUpdate.id",
         lazy="selectin",
     )
 
@@ -158,6 +182,28 @@ class CaseAttachment(Base, TimestampMixin):
     )
 
     case: Mapped[Case] = relationship(back_populates="attachments")
+
+
+class CaseStatusUpdate(Base, TimestampMixin):
+    """Per-case audit / timeline entry. One row per workflow transition."""
+
+    __tablename__ = "case_status_updates"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[int] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    from_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    to_status: Mapped[str] = mapped_column(String(40), nullable=False)
+    from_stage: Mapped[str] = mapped_column(String(40), nullable=False)
+    to_stage: Mapped[str] = mapped_column(String(40), nullable=False)
+    actor_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+    comment: Mapped[str] = mapped_column(String(2000), default="")
+
+    case: Mapped[Case] = relationship(back_populates="timeline")
 
 
 class CaseNoSequence(Base):

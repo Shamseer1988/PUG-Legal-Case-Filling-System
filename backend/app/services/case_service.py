@@ -6,9 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models.case import (
     CASE_STATUS_DRAFT,
-    CASE_STATUS_SUBMITTED,
     STAGE_ACCOUNTANT,
-    STAGE_SALES_MGR,
     Case,
     CaseNoSequence,
     Cheque,
@@ -70,14 +68,11 @@ def update_case(db: Session, case: Case, payload: CaseUpdate) -> Case:
     return case
 
 
-def submit_case(db: Session, case: Case) -> Case:
-    if case.status != CASE_STATUS_DRAFT:
-        raise ValueError("Only Draft cases can be submitted")
-    if not case.cheques:
-        raise ValueError("At least one cheque is required before submitting")
-    case.status = CASE_STATUS_SUBMITTED
-    case.current_stage = STAGE_SALES_MGR
-    case.submitted_at = datetime.now(timezone.utc)
-    db.commit()
-    db.refresh(case)
-    return case
+def submit_case(db: Session, case: Case, current_user) -> Case:
+    """Delegates to workflow service so the timeline log is consistent."""
+    from app.services import workflow_service
+
+    try:
+        return workflow_service.submit(db, case, current_user)
+    except workflow_service.WorkflowError as e:
+        raise ValueError(str(e)) from e

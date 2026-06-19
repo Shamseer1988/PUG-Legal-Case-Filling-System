@@ -37,7 +37,7 @@ const GROUPS: Group[] = [
     title: 'Transactions',
     items: [
       { href: '/cases', label: 'Cases', icon: FileText, perm: 'cases:read' },
-      { href: '/approvals', label: 'Approvals (Phase 3)', icon: Briefcase, perm: 'cases:read' },
+      { href: '/approvals', label: 'Approvals Inbox', icon: Briefcase, perm: 'cases:read' },
     ],
   },
   {
