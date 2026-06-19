@@ -9,6 +9,7 @@ from app.api.v1 import (
     backup,
     cases,
     court,
+    dashboard,
     diagnostics,
     email_log,
     health,
@@ -40,3 +41,4 @@ api_router.include_router(audit.router)
 api_router.include_router(backup.router)
 api_router.include_router(settings_router.router)
 api_router.include_router(diagnostics.router)
+api_router.include_router(dashboard.router)

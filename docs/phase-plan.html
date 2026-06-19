@@ -933,13 +933,16 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 11</span><strong>Executive Dashboard &amp; Charts</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 11 ✓</span><strong>Executive Dashboard &amp; Charts</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>KPI cards (cases filed, value, recovered, pending, closed)</li>
-      <li>Hearing calendar &amp; alerts panel</li>
-      <li>Status heatmap (division × status), trend lines</li>
-      <li>Drill-through to case list with applied filters</li>
-      <li>Role-scoped dashboards</li>
+      <li>6 endpoints under <code>/api/v1/dashboard</code>: <code>kpis</code>, <code>status-breakdown</code>, <code>trend</code>, <code>division-heatmap</code>, <code>upcoming-hearings</code>, <code>alerts</code></li>
+      <li>All queries role-scoped via the user's division mapping (super and wildcard see everything)</li>
+      <li>KPIs: total cases, open, approved+filed, total legal amount, paid cash, my inbox count + overdue count</li>
+      <li>Monthly trend: last 12 months of created vs approved counts</li>
+      <li>Alerts panel: SLA-breached cases, stuck-&gt;7-days cases, clarification-pending cases - each links to the relevant list</li>
+      <li>Drill-through: every KPI card and hearing card is a link to the matching list / case</li>
+      <li>Frontend dashboard rewritten with <strong>recharts</strong>: line chart (monthly activity), donut + bar (status breakdown), colour-graded division &times; status heatmap, upcoming-hearings cards, alerts banner stack</li>
+      <li>Tests cover empty / populated KPIs, status breakdown, 12-month trend shape, heatmap rows and alerts-empty</li>
     </ul>
   </div>
 

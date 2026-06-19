@@ -612,7 +612,43 @@ notifications + reports + scheduled reports + audit + backup + settings).
 
 ---
 
-## 18. What's NOT done yet
+## 18. Phase 11 - Executive Dashboard & Charts
+
+The `/dashboard` page is now a full executive view (no migration
+needed, just the new recharts dependency):
+
+1. After `git pull`, re-run `.\scripts\setup.ps1` (or `npm install`
+   inside `frontend\`) so recharts is installed.
+2. Sign in and land on `/dashboard`.
+3. **Alerts banner** at the top surfaces SLA-breached, stuck-7-day,
+   and clarification-pending cases - each banner links to the right
+   list.
+4. **6 KPI cards**: total cases, open, approved+filed, legal amount,
+   paid cash, my inbox (overdue count shown in red). Every card is a
+   clickable drill-through.
+5. **Monthly Activity** line chart - last 12 months of cases created
+   vs approved.
+6. **Status Breakdown** donut + bar chart with PUG-colour-coded slices.
+7. **Division x Status** heatmap with intensity-graded cells.
+8. **Upcoming Hearings** panel showing the next 8 hearings with a
+   "in Xd" badge.
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET /api/v1/dashboard/kpis`
+- `GET /api/v1/dashboard/status-breakdown`
+- `GET /api/v1/dashboard/trend`
+- `GET /api/v1/dashboard/division-heatmap`
+- `GET /api/v1/dashboard/upcoming-hearings?days=30&limit=10`
+- `GET /api/v1/dashboard/alerts`
+
+Run `pytest -q` -> 53 tests pass (auth + cases + workflow + court +
+notifications + reports + scheduled reports + audit + backup +
+settings + dashboard).
+
+---
+
+## 19. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 
