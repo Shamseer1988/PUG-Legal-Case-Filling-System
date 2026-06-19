@@ -2,6 +2,7 @@
 
 import { LogOut } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { NotificationBell } from './NotificationBell';
 import { ThemeToggle } from './ThemeToggle';
 import { useAuthStore } from '@/lib/auth';
 
@@ -34,6 +35,7 @@ export function Topbar() {
             </div>
           </div>
         )}
+        <NotificationBell />
         <ThemeToggle />
         <button
           type="button"

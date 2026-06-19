@@ -101,6 +101,10 @@ def submit(db: Session, case: Case, user: User) -> Case:
     )
     db.commit()
     db.refresh(case)
+    from app.services import notification_service
+
+    notification_service.on_case_submitted(db, case, user)
+    db.commit()
     return case
 
 
@@ -135,6 +139,10 @@ def approve(db: Session, case: Case, user: User, comment: str) -> Case:
     )
     db.commit()
     db.refresh(case)
+    from app.services import notification_service
+
+    notification_service.on_case_advanced(db, case, user, comment)
+    db.commit()
     return case
 
 
@@ -159,6 +167,10 @@ def reject(db: Session, case: Case, user: User, comment: str) -> Case:
     )
     db.commit()
     db.refresh(case)
+    from app.services import notification_service
+
+    notification_service.on_case_rejected(db, case, user, comment)
+    db.commit()
     return case
 
 
@@ -186,6 +198,10 @@ def request_clarification(db: Session, case: Case, user: User, comment: str) -> 
     )
     db.commit()
     db.refresh(case)
+    from app.services import notification_service
+
+    notification_service.on_case_clarification_requested(db, case, user, comment)
+    db.commit()
     return case
 
 
@@ -222,6 +238,10 @@ def resubmit(db: Session, case: Case, user: User, comment: str) -> Case:
     )
     db.commit()
     db.refresh(case)
+    from app.services import notification_service
+
+    notification_service.on_case_resubmitted(db, case, user)
+    db.commit()
     return case
 
 

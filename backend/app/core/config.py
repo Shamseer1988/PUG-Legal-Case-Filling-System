@@ -46,6 +46,19 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_json: bool = False
 
+    # SMTP (Phase 5 - admin UI for editing arrives in Phase 10)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_use_tls: bool = True
+    smtp_from_email: str = "no-reply@pug.local"
+    smtp_from_name: str = "PUG Legal Case Control System"
+
+    # Branding (used by email templates + print views)
+    brand_company_name: str = "Paris United Group Holding"
+    brand_app_url: str = "http://127.0.0.1:3000"
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]

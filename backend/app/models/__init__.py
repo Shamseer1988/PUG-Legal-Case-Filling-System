@@ -4,6 +4,7 @@ from app.db.base import Base
 from app.models.case import Case, CaseAttachment, CaseNoSequence, CaseStatusUpdate, Cheque
 from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
+from app.models.notification import EmailLog, Notification
 from app.models.user import Role, User, UserDivisionMap
 
 __all__ = [
@@ -25,4 +26,6 @@ __all__ = [
     "CourtFiling",
     "Hearing",
     "CashRequest",
+    "Notification",
+    "EmailLog",
 ]

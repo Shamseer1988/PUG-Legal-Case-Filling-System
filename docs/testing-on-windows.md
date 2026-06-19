@@ -399,7 +399,54 @@ Run `pytest -q` -> 13 tests pass (auth + cases + workflow + court).
 
 ---
 
-## 12. What's NOT done yet
+## 12. Phase 5 - Notifications & Email Log
+
+After running migration `0005_phase5_notifications`:
+
+1. **SMTP**: leave `SMTP_HOST` blank in `backend\.env` for console mode
+   (everything is logged in the EmailLog as `Sent` but not actually
+   delivered). To send real emails, fill SMTP_HOST/PORT/USERNAME/PASSWORD
+   and set SMTP_USE_TLS=true.
+
+2. Sign in as admin and create a new case. Pick yourself as Sales
+   Manager (so you get notified). Save & Submit.
+
+3. Topbar **bell icon** in the right corner shows a red badge with the
+   unread count. Click it -> dropdown lists notifications.
+   Click a notification -> jumps to the case and marks it read.
+   Click **Mark all read** to clear all.
+
+4. Walk the case through stages. Each approval fires a notification to
+   the next stage's assigned user (if one was selected on the form).
+   Reject / Request Clarification notify the case creator.
+
+5. After Chairman/MD approval, record a court filing -> the FM is
+   notified. Create a cash request -> FM is notified. Approve it -> the
+   accountant is notified. Pay it -> the lawyer is notified.
+
+6. Sidebar **Admin -> Email Log** lists every outbound message with:
+   - Status pill (Sent / Queued / Failed / Bounced)
+   - Subject, recipients, event tag, attempts
+   - **Preview** opens the rendered branded HTML in a modal iframe
+   - **Resend** re-attempts delivery
+
+### Phase 5 API endpoints
+
+- `GET /api/v1/notifications?only_unread=&limit=`
+- `GET /api/v1/notifications/unread-count`
+- `POST /api/v1/notifications/{id}/read`
+- `POST /api/v1/notifications/read-all`
+- `GET /api/v1/admin/email-log?only=Sent|Failed|...`
+- `GET /api/v1/admin/email-log/{id}`
+- `GET /api/v1/admin/email-log/{id}/preview` (HTML)
+- `POST /api/v1/admin/email-log/{id}/resend`
+- `POST /api/v1/admin/email-log/bounce` (super only)
+
+Run `pytest -q` -> 17 tests pass.
+
+---
+
+## 13. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 

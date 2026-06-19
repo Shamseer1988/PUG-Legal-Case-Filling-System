@@ -848,13 +848,16 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 5</span><strong>Notifications &amp; Email Log</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 5 ✓</span><strong>Notifications &amp; Email Log</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>SMTP config in settings, Jinja2 branded HTML templates</li>
-      <li>Event-driven dispatcher with rule matrix</li>
-      <li>In-app bell with unread badge, mark read/all</li>
-      <li>Email Log module: list, preview, resend, attachment download</li>
-      <li>Bounce handling stub</li>
+      <li><code>Notification</code> (in-app) + <code>EmailLog</code> models</li>
+      <li>SMTP via env vars (host, port, TLS, creds, from); blank host = console mode for dev</li>
+      <li>Branded Jinja2 template <code>notification_email.html</code> (PUG navy/gold, facts grid, action button)</li>
+      <li>Notification service hooked into workflow + court services - fires on submit, advance, reject, clarification, resubmit, court_filed, cash_request created/approved/rejected/paid</li>
+      <li>Bell in topbar with live unread count, dropdown list, mark-one / mark-all</li>
+      <li><code>/admin/email-log</code> page with status filter, HTML preview in iframe, resend</li>
+      <li>Bounce webhook stub (<code>POST /admin/email-log/bounce</code>) for SES/SendGrid wiring</li>
+      <li>Migration <code>0005_phase5_notifications</code>; tests cover submit notification, email-log records event, mark-all-read, preview &amp; resend</li>
     </ul>
   </div>
 

@@ -16,6 +16,7 @@ import {
   Settings,
   Calendar,
   Banknote,
+  Mail,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasPermission, useAuthStore } from '@/lib/auth';
@@ -65,6 +66,7 @@ const GROUPS: Group[] = [
     items: [
       { href: '/admin/users', label: 'Users', icon: Users, perm: 'users:read' },
       { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, perm: 'roles:read' },
+      { href: '/admin/email-log', label: 'Email Log', icon: Mail, perm: 'admin:email_log' },
       { href: '/admin/settings', label: 'System Settings (Phase 10)', icon: Settings, super: true },
     ],
   },

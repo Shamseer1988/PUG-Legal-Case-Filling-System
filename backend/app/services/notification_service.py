@@ -1,0 +1,251 @@
+"""Notification orchestration: in-app bell + branded email per event.
+
+Each function is small + defensive: missing fields just skip notification
+rather than crashing the calling workflow.
+"""
+
+from __future__ import annotations
+
+from sqlalchemy.orm import Session
+
+from app.core.config import settings
+from app.models.case import Case
+from app.models.court import CashRequest
+from app.models.notification import Notification
+from app.models.user import User
+from app.services import email_service
+
+EMAIL_TEMPLATE = "notification_email.html"
+
+
+def _case_url(case_id: int) -> str:
+    return f"{settings.brand_app_url.rstrip('/')}/cases/{case_id}"
+
+
+def _emit(
+    db: Session,
+    *,
+    user_id: int,
+    title: str,
+    body: str,
+    link: str,
+    event: str,
+    related_case_id: int | None,
+    facts: list[tuple[str, str]] | None = None,
+    lines: list[str] | None = None,
+) -> None:
+    user = db.get(User, user_id)
+    if not user or not user.is_active:
+        return
+
+    db.add(
+        Notification(
+            user_id=user.id,
+            title=title,
+            body=body,
+            link=link,
+            event=event,
+            related_case_id=related_case_id,
+        )
+    )
+
+    if user.email:
+        email_service.queue_email(
+            db,
+            to_emails=[user.email],
+            subject=title,
+            template=EMAIL_TEMPLATE,
+            context={
+                "title": title,
+                "subtitle": "",
+                "lines": lines or ([body] if body else []),
+                "facts": facts or [],
+                "action_url": link,
+                "action_label": "Open Case",
+            },
+            event=event,
+            related_case_id=related_case_id,
+            related_user_id=user.id,
+        )
+
+
+def _case_facts(case: Case) -> list[tuple[str, str]]:
+    return [
+        ("Case No.", case.case_no),
+        ("Status", case.status),
+        ("Current Stage", case.current_stage),
+        ("Legal Amount", f"{case.legal_filing_amount}"),
+    ]
+
+
+# ===================== Workflow events =====================
+def on_case_submitted(db: Session, case: Case, actor: User) -> None:
+    target = case.sales_manager_id
+    if not target:
+        return
+    _emit(
+        db,
+        user_id=target,
+        title=f"New legal case submitted: {case.case_no}",
+        body=f"{actor.full_name} submitted a case for your review.",
+        link=_case_url(case.id),
+        event="case.submitted",
+        related_case_id=case.id,
+        lines=[f"{actor.full_name} has submitted a new case for review."],
+        facts=_case_facts(case),
+    )
+
+
+def on_case_advanced(db: Session, case: Case, actor: User, comment: str) -> None:
+    """Notify the user assigned to the new (current) stage."""
+    from app.core.workflow import get_stage
+
+    cfg = get_stage(case.current_stage)
+    user_field = cfg.user_field if cfg else None
+    if not user_field:
+        return
+    target = getattr(case, user_field, None)
+    if not target:
+        return
+    _emit(
+        db,
+        user_id=target,
+        title=f"Case awaiting your approval: {case.case_no}",
+        body=f"Approved by {actor.full_name}. Now at {case.current_stage}.",
+        link=_case_url(case.id),
+        event="case.advanced",
+        related_case_id=case.id,
+        lines=(
+            [comment] if comment else []
+        )
+        + [f"Approved by {actor.full_name}. Now waiting at {case.current_stage}."],
+        facts=_case_facts(case),
+    )
+
+
+def on_case_rejected(db: Session, case: Case, actor: User, comment: str) -> None:
+    target = case.created_by_id
+    _emit(
+        db,
+        user_id=target,
+        title=f"Case rejected: {case.case_no}",
+        body=f"Rejected by {actor.full_name} at {case.current_stage}.",
+        link=_case_url(case.id),
+        event="case.rejected",
+        related_case_id=case.id,
+        lines=[
+            f"Rejected by {actor.full_name} at {case.current_stage}.",
+            f"Reason: {comment}",
+        ],
+        facts=_case_facts(case),
+    )
+
+
+def on_case_clarification_requested(
+    db: Session, case: Case, actor: User, comment: str
+) -> None:
+    target = case.created_by_id
+    _emit(
+        db,
+        user_id=target,
+        title=f"Clarification requested: {case.case_no}",
+        body=f"{actor.full_name} asks: {comment}",
+        link=_case_url(case.id),
+        event="case.clarification_requested",
+        related_case_id=case.id,
+        lines=[f"{actor.full_name} requested clarification:", comment],
+        facts=_case_facts(case),
+    )
+
+
+def on_case_resubmitted(db: Session, case: Case, actor: User) -> None:
+    """Notify the stage receiving the resubmission."""
+    from app.core.workflow import get_stage
+
+    cfg = get_stage(case.current_stage)
+    if not cfg or not cfg.user_field:
+        return
+    target = getattr(case, cfg.user_field, None)
+    if not target:
+        return
+    _emit(
+        db,
+        user_id=target,
+        title=f"Clarification answered: {case.case_no}",
+        body=f"{actor.full_name} resubmitted with clarification.",
+        link=_case_url(case.id),
+        event="case.resubmitted",
+        related_case_id=case.id,
+        facts=_case_facts(case),
+    )
+
+
+# ===================== Court / cash events =====================
+def on_court_filed(db: Session, case: Case, actor: User) -> None:
+    if not case.fm_id:
+        return
+    _emit(
+        db,
+        user_id=case.fm_id,
+        title=f"Case filed in court: {case.case_no}",
+        body=f"Filed by {actor.full_name}.",
+        link=_case_url(case.id),
+        event="case.court_filed",
+        related_case_id=case.id,
+        facts=_case_facts(case),
+    )
+
+
+def on_cash_request_created(db: Session, cash: CashRequest, case: Case) -> None:
+    if not case.fm_id:
+        return
+    _emit(
+        db,
+        user_id=case.fm_id,
+        title=f"Cash request: {case.case_no}",
+        body=f"Amount {cash.amount}. {cash.purpose or ''}",
+        link=_case_url(case.id),
+        event="cash_request.created",
+        related_case_id=case.id,
+        facts=[("Amount", f"{cash.amount}"), ("Purpose", cash.purpose or "-"), ("Case", case.case_no)],
+    )
+
+
+def on_cash_request_approved(db: Session, cash: CashRequest, case: Case) -> None:
+    # Notify the Accountant (case creator)
+    _emit(
+        db,
+        user_id=case.created_by_id,
+        title=f"Cash request approved: {case.case_no}",
+        body=f"Approved amount {cash.amount}.",
+        link=_case_url(case.id),
+        event="cash_request.approved",
+        related_case_id=case.id,
+        facts=[("Amount", f"{cash.amount}"), ("Approval Note", cash.approval_comment or "-")],
+    )
+
+
+def on_cash_request_rejected(db: Session, cash: CashRequest, case: Case) -> None:
+    _emit(
+        db,
+        user_id=cash.requested_by_id,
+        title=f"Cash request rejected: {case.case_no}",
+        body=cash.approval_comment or "",
+        link=_case_url(case.id),
+        event="cash_request.rejected",
+        related_case_id=case.id,
+        facts=[("Amount", f"{cash.amount}"), ("Reason", cash.approval_comment or "-")],
+    )
+
+
+def on_cash_request_paid(db: Session, cash: CashRequest, case: Case) -> None:
+    _emit(
+        db,
+        user_id=cash.requested_by_id,
+        title=f"Cash paid: {case.case_no}",
+        body=f"Reference: {cash.payment_reference}",
+        link=_case_url(case.id),
+        event="cash_request.paid",
+        related_case_id=case.id,
+        facts=[("Amount", f"{cash.amount}"), ("Reference", cash.payment_reference or "-")],
+    )

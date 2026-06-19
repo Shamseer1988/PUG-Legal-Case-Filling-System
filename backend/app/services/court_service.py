@@ -82,6 +82,10 @@ def create_court_filing(
     )
     db.commit()
     db.refresh(filing)
+    from app.services import notification_service
+
+    notification_service.on_court_filed(db, case, user)
+    db.commit()
     return filing
 
 
@@ -148,6 +152,10 @@ def create_cash_request(
     db.add(cr)
     db.commit()
     db.refresh(cr)
+    from app.services import notification_service
+
+    notification_service.on_cash_request_created(db, cr, case)
+    db.commit()
     return cr
 
 
@@ -162,6 +170,12 @@ def approve_cash_request(
     cr.approval_comment = comment.strip()
     db.commit()
     db.refresh(cr)
+    from app.services import notification_service
+
+    case = db.get(Case, cr.case_id)
+    if case:
+        notification_service.on_cash_request_approved(db, cr, case)
+        db.commit()
     return cr
 
 
@@ -176,6 +190,12 @@ def reject_cash_request(
     cr.approval_comment = payload.comment.strip()
     db.commit()
     db.refresh(cr)
+    from app.services import notification_service
+
+    case = db.get(Case, cr.case_id)
+    if case:
+        notification_service.on_cash_request_rejected(db, cr, case)
+        db.commit()
     return cr
 
 
@@ -191,6 +211,12 @@ def pay_cash_request(
     cr.receipt_attachment_id = payload.receipt_attachment_id
     db.commit()
     db.refresh(cr)
+    from app.services import notification_service
+
+    case = db.get(Case, cr.case_id)
+    if case:
+        notification_service.on_cash_request_paid(db, cr, case)
+        db.commit()
     return cr
 
 

@@ -104,7 +104,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 2     | Legal Case Entry Form                  | ✅ Done     |
 | 3     | Approval Workflow Engine               | ✅ Done     |
 | 4     | Court Filing, Hearings, Expenses       | ✅ Done     |
-| 5     | Notifications & Email Log              | Pending     |
+| 5     | Notifications & Email Log              | ✅ Done     |
 | 6     | Reports + Excel/PDF/Print Export       | Pending     |
 | 7     | Scheduled Reporting via Email          | Pending     |
 | 8     | Audit Log (Tamper-Evident)             | Pending     |
