@@ -41,7 +41,7 @@ def diagnostics(
         from app.core.config import settings
         import redis
 
-        client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=2)
+        client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=2, protocol=2)
         client.ping()
         out["checks"].append({"name": "Redis", "ok": True, "detail": settings.redis_url})
     except Exception as e:
