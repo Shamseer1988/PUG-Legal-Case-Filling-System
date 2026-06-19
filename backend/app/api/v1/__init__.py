@@ -9,6 +9,7 @@ from app.api.v1 import (
     backup,
     cases,
     court,
+    diagnostics,
     email_log,
     health,
     masters,
@@ -16,6 +17,7 @@ from app.api.v1 import (
     reports,
     roles,
     scheduled_reports,
+    settings as settings_router,
     users,
 )
 
@@ -36,3 +38,5 @@ api_router.include_router(reports.router)
 api_router.include_router(scheduled_reports.router)
 api_router.include_router(audit.router)
 api_router.include_router(backup.router)
+api_router.include_router(settings_router.router)
+api_router.include_router(diagnostics.router)

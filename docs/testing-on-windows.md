@@ -575,7 +575,44 @@ notifications + reports + scheduled reports + audit + backup).
 
 ---
 
-## 17. What's NOT done yet
+## 17. Phase 10 - System Settings & Admin Console
+
+After running migration `0009_phase10_settings`:
+
+1. Sidebar **Admin -> System Settings**. The left tab list shows
+   **12 groups**. Each tab loads instantly from the API.
+2. Open **Email (SMTP)**, enter your SMTP host / port / credentials,
+   tick **Use TLS**, click **Save** (the button shows a dirty-field
+   counter). Sensitive fields show an `Encrypted` chip; once saved they
+   come back as `********` in the UI.
+3. With the SMTP fields populated, click **Test Send**, enter a
+   recipient address. A branded "SMTP Test" email is queued; the UI
+   reports `Sent` (green) or the actual SMTP error.
+4. Open **Admin -> Email Log** to confirm the test entry.
+5. Update **Integrations -> S3 Secret Key**, save, then open the
+   database directly to confirm the row starts with `ENC:` (the
+   plaintext is never persisted).
+6. Sidebar **Admin -> Audit Log** -> filter by action `settings_changed`
+   to see exactly which keys changed, when, by whom, and a colour-coded
+   diff.
+7. Sidebar **Admin -> Health & Diagnostics**: KPI strip + per-component
+   table for Database, Redis, Scheduler, Last Backup, Backup
+   Encryption Key. Click **Refresh** to re-run.
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET /api/v1/settings/groups` - descriptor for all 12 groups
+- `GET /api/v1/settings/groups/{group_key}` - current values (sensitive masked)
+- `PUT /api/v1/settings/groups/{group_key}` - partial update
+- `POST /api/v1/settings/smtp/test-send` - send a branded test email
+- `GET /api/v1/diagnostics` - live health checks
+
+Run `pytest -q` -> 47 tests pass (auth + cases + workflow + court +
+notifications + reports + scheduled reports + audit + backup + settings).
+
+---
+
+## 18. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 

@@ -121,7 +121,23 @@ def _deliver(
         log.error = "No recipients"
         return
 
-    if not settings.smtp_host:
+    # DB-stored settings (Phase 10) override env vars; fall back to env.
+    try:
+        from app.services import settings_service
+
+        smtp_cfg = settings_service.effective_smtp(db)
+    except Exception:  # pragma: no cover - defensive
+        smtp_cfg = {
+            "host": settings.smtp_host,
+            "port": settings.smtp_port,
+            "use_tls": settings.smtp_use_tls,
+            "username": settings.smtp_username,
+            "password": settings.smtp_password,
+            "from_email": settings.smtp_from_email,
+            "from_name": settings.smtp_from_name,
+        }
+
+    if not smtp_cfg["host"]:
         attach_note = (
             f" attachments={[a[0] for a in attachments]}" if attachments else ""
         )
@@ -134,12 +150,12 @@ def _deliver(
         )
         log.status = EMAIL_STATUS_SENT
         log.sent_at = datetime.now(timezone.utc)
-        log.error = "console mode (SMTP_HOST not set)"
+        log.error = "console mode (SMTP host not configured)"
         return
 
     try:
         msg = EmailMessage()
-        msg["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
+        msg["From"] = f"{smtp_cfg['from_name']} <{smtp_cfg['from_email']}>"
         msg["To"] = ", ".join(to_list)
         if log.cc_emails:
             msg["Cc"] = log.cc_emails
@@ -155,13 +171,13 @@ def _deliver(
                 filename=filename,
             )
 
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as s:
+        with smtplib.SMTP(smtp_cfg["host"], smtp_cfg["port"], timeout=20) as s:
             s.ehlo()
-            if settings.smtp_use_tls:
+            if smtp_cfg["use_tls"]:
                 s.starttls()
                 s.ehlo()
-            if settings.smtp_username:
-                s.login(settings.smtp_username, settings.smtp_password)
+            if smtp_cfg["username"]:
+                s.login(smtp_cfg["username"], smtp_cfg["password"])
             recipients = list(
                 to_list
                 + [e.strip() for e in log.cc_emails.split(",") if e.strip()]

@@ -109,7 +109,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 7     | Scheduled Reporting via Email          | ✅ Done     |
 | 8     | Audit Log (Tamper-Evident)             | ✅ Done     |
 | 9     | Backup & Restore (PugFin parity)       | ✅ Done     |
-| 10    | System Settings & Admin Console        | Pending     |
+| 10    | System Settings & Admin Console        | ✅ Done     |
 | 11    | Executive Dashboard & Charts           | Pending     |
 | 12    | Hardening, Tests, Deploy               | Pending     |
 

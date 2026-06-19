@@ -8,6 +8,7 @@ from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
 from app.models.notification import EmailLog, Notification
 from app.models.scheduled_report import ScheduledReport, ScheduledReportRun
+from app.models.settings import SettingsKV
 from app.models.user import Role, User, UserDivisionMap
 
 __all__ = [
@@ -36,4 +37,5 @@ __all__ = [
     "AuditLog",
     "BackupJob",
     "RestoreJob",
+    "SettingsKV",
 ]

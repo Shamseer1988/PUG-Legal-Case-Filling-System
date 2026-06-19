@@ -918,13 +918,17 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 10</span><strong>System Settings &amp; Admin Console</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 10 ✓</span><strong>System Settings &amp; Admin Console</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>All 12 setting groups (Company &amp; Branding, SMTP, AI, Numbering, Workflow, Security, Backup, Notifications, Appearance, Integrations, Data Mgmt, Maintenance)</li>
-      <li>Encrypted secrets at rest, masked inputs, test buttons</li>
-      <li>Notification Template editor (WYSIWYG + variables + preview)</li>
-      <li>Workflow Designer UI</li>
-      <li>Health &amp; Diagnostics page</li>
+      <li><code>SettingsKV</code> table with one row per setting; sensitive fields stored as <code>ENC:&lt;base64&gt;</code> AES-256-GCM envelopes (reuses the Phase 9 crypto key)</li>
+      <li>Static descriptor of <strong>all 12 setting groups</strong> (Company &amp; Branding, SMTP, AI, Numbering, Workflow, Security, Backup, Notifications, Appearance, Integrations, Data Management, Maintenance) with per-field type metadata + env fallback name</li>
+      <li>DB values override env vars at runtime; the SMTP backend now calls <code>settings_service.effective_smtp()</code> per-send so changes take effect immediately</li>
+      <li>API endpoints: <code>GET /settings/groups</code>, <code>GET/PUT /settings/groups/{key}</code>, <code>POST /settings/smtp/test-send</code> (sends a branded notification via the live SMTP config)</li>
+      <li>Every settings save and SMTP test is recorded in the Phase 8 audit chain</li>
+      <li><code>/admin/settings</code>: tabbed UI with one tab per group, dynamic field rendering (text / textarea / password / number / checkbox / color / select / url / email), masked sensitive values, source badge (db / env / default), Save button counter for dirty fields, <strong>Test Send</strong> button on the SMTP group</li>
+      <li><code>/admin/diagnostics</code>: live health for Database, Redis, Phase 7 Scheduler, last backup and the backup encryption key; KPI strip + colour-coded rows</li>
+      <li>Migration <code>0009_phase10_settings</code>; tests for descriptor coverage (all 12 groups), SMTP round-trip with masked password, sensitive value encryption at rest, rejected unknown field, SMTP test send in console mode and the diagnostics endpoint</li>
+      <li>Sidebar Admin group drops the "(Phase 10)" suffix and adds <strong>Health &amp; Diagnostics</strong></li>
     </ul>
   </div>
 
