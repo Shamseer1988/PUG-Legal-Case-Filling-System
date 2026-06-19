@@ -121,46 +121,45 @@ export function Sidebar() {
       className={cn(
         'sticky top-0 hidden h-screen shrink-0 border-r border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] md:flex md:flex-col',
         'transition-all duration-300 ease-in-out',
-        collapsed ? 'w-[68px]' : 'w-64',
+        collapsed ? 'w-20' : 'w-64',
       )}
     >
       {/* Brand header with collapse/expand toggle */}
       <div
         className={cn(
           'flex h-16 items-center border-b border-[rgb(var(--color-border))] transition-all duration-300',
-          collapsed ? 'justify-center px-2' : 'px-4 justify-between'
+          collapsed ? 'pl-2.5 pr-1.5 gap-1 justify-between' : 'px-4 justify-between',
         )}
       >
-        {collapsed ? (
-          <button
-            type="button"
-            onClick={() => setCollapsed(false)}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-[rgb(var(--color-muted))] transition-colors hover:bg-[rgb(var(--color-border))]/50 hover:text-[rgb(var(--color-fg))]"
-            title="Expand sidebar"
-          >
-            <ChevronRight className="h-5 w-5" />
-          </button>
-        ) : (
-          <>
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pug-gold-500 text-xs font-extrabold text-pug-navy-800">
-              PUG
-            </div>
-            <div className="ml-3 flex-1 overflow-hidden text-sm font-semibold leading-tight whitespace-nowrap">
-              Legal Case
-              <div className="text-[10px] uppercase tracking-widest text-pug-gold-600 dark:text-pug-gold-400">
-                Control System
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => setCollapsed(true)}
-              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[rgb(var(--color-muted))] transition-colors hover:bg-[rgb(var(--color-border))]/50 hover:text-[rgb(var(--color-fg))]"
-              title="Collapse sidebar"
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </button>
-          </>
-        )}
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pug-gold-500 text-xs font-extrabold text-pug-navy-800">
+          PUG
+        </div>
+        <div
+          className={cn(
+            'ml-3 overflow-hidden text-sm font-semibold leading-tight whitespace-nowrap transition-all duration-300',
+            collapsed ? 'w-0 opacity-0 ml-0' : 'w-auto flex-1 opacity-100',
+          )}
+        >
+          Legal Case
+          <div className="text-[10px] uppercase tracking-widest text-pug-gold-600 dark:text-pug-gold-400">
+            Control System
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className={cn(
+            'flex shrink-0 items-center justify-center rounded-md text-[rgb(var(--color-muted))] transition-all duration-300 hover:bg-[rgb(var(--color-border))]/50 hover:text-[rgb(var(--color-fg))]',
+            collapsed ? 'h-6 w-6' : 'h-7 w-7',
+          )}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
+          )}
+        </button>
       </div>
 
       {/* Navigation */}
