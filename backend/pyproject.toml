@@ -1,8 +1,12 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "pug-legal-backend"
 version = "0.1.0"
-description = "PUG Legal Case Control System — Backend (FastAPI)"
-requires-python = ">=3.12"
+description = "PUG Legal Case Control System - Backend (FastAPI)"
+requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.32.0",
@@ -40,9 +44,17 @@ reports = [
     "pillow>=11.0.0",
 ]
 
+# Tell setuptools which top-level packages belong in the wheel.
+# Without this, the `alembic/` folder at the backend root confuses
+# auto-discovery ("Multiple top-level packages discovered").
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+exclude = ["alembic*", "tests*"]
+
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "N", "SIM"]

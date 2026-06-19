@@ -6,6 +6,14 @@
 
 $ErrorActionPreference = "Stop"
 
+function Assert-LastExit($Msg) {
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ""
+        Write-Host "!! $Msg (exit $LASTEXITCODE)" -ForegroundColor Red
+        exit $LASTEXITCODE
+    }
+}
+
 $Root = (Resolve-Path "$PSScriptRoot\..").Path
 Set-Location $Root
 Write-Host "==> Repository: $Root" -ForegroundColor Cyan
@@ -19,16 +27,30 @@ Write-Host "==> Setting up backend (Python venv)" -ForegroundColor Cyan
 Set-Location "$Root\backend"
 
 if (-not (Test-Path ".venv")) {
+    $created = $false
     try {
         py -3.12 -m venv .venv
-    } catch {
+        if ($LASTEXITCODE -eq 0) { $created = $true }
+    } catch { }
+    if (-not $created) {
+        try {
+            py -3.11 -m venv .venv
+            if ($LASTEXITCODE -eq 0) { $created = $true }
+        } catch { }
+    }
+    if (-not $created) {
         python -m venv .venv
+        Assert-LastExit "Failed to create Python venv"
     }
 }
 
 & ".\.venv\Scripts\Activate.ps1"
+
 python -m pip install --upgrade pip
+Assert-LastExit "pip self-upgrade failed"
+
 pip install -e ".[dev,reports]"
+Assert-LastExit "pip install of backend dependencies failed"
 
 if (-not (Test-Path ".env")) {
     Copy-Item ".env.example" ".env"
@@ -36,10 +58,9 @@ if (-not (Test-Path ".env")) {
 }
 
 Write-Host "==> Running Alembic migrations"
-try {
-    alembic upgrade head
-} catch {
-    Write-Host "!! Alembic failed - confirm Postgres is running and DATABASE_URL is correct." -ForegroundColor Yellow
+alembic upgrade head
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "!! Alembic failed - confirm Postgres is running and DATABASE_URL in backend\.env is correct." -ForegroundColor Yellow
 }
 
 deactivate
@@ -58,6 +79,7 @@ if (Get-Command pnpm -ErrorAction SilentlyContinue) {
 } else {
     npm install
 }
+Assert-LastExit "Frontend dependency install failed"
 
 Set-Location $Root
 
