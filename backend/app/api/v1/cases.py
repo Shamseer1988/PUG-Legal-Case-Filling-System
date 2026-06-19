@@ -9,7 +9,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_permission
@@ -278,15 +278,20 @@ def delete_attachment(
 
 
 # ----------------- Print -----------------
-@router.get("/{case_id}/print", response_class=HTMLResponse)
+@router.get("/{case_id}/print")
 def print_case(
     case_id: int,
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(CASES_READ)),
-) -> HTMLResponse:
+) -> Response:
     case = _get_case_or_404(db, user, case_id)
-    html = render.render_case_print(db, case)
-    return HTMLResponse(html)
+    pdf_bytes = render.render_case_pdf(db, case)
+    filename = f"{case.case_no}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 # This dep is used by the print route to prove auth via either header or query token.
