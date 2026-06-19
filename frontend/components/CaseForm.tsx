@@ -158,6 +158,8 @@ export function CaseForm({ caseId }: { caseId?: number }) {
   function toPayload(): Record<string, unknown> {
     return {
       ...draft,
+      customer_id: draft.customer_id ? Number(draft.customer_id) : undefined,
+      division_id: draft.division_id ? Number(draft.division_id) : undefined,
       actual_due_amount: draft.actual_due_amount || '0',
       legal_filing_amount: draft.legal_filing_amount || '0',
       deposit_date: draft.deposit_date || null,
@@ -175,6 +177,13 @@ export function CaseForm({ caseId }: { caseId?: number }) {
     setBusy(true);
     setErr(null);
     setInfo(null);
+
+    if (!draft.customer_id || !draft.division_id) {
+      setErr('Customer and Division are required.');
+      setBusy(false);
+      return;
+    }
+
     try {
       let id = caseId;
       if (id) {
@@ -313,6 +322,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             <Select
               value={draft.customer_id}
               options={customers}
+              allowEmpty
               onChange={(v) => up('customer_id', v)}
               disabled={locked}
             />
@@ -321,6 +331,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             <Select
               value={draft.division_id}
               options={divisions}
+              allowEmpty
               onChange={(v) => up('division_id', v)}
               disabled={locked}
             />
