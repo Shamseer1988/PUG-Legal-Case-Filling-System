@@ -538,7 +538,44 @@ notifications + reports + scheduled reports + audit).
 
 ---
 
-## 16. What's NOT done yet
+## 16. Phase 9 - Backup & Restore
+
+After running migration `0008_phase9_backup`:
+
+1. Generate an encryption key once and put it in `backend\.env`:
+   ```powershell
+   python -c "import os, base64; print(base64.b64encode(os.urandom(32)).decode())"
+   ```
+   Paste the result as `BACKUP_ENCRYPTION_KEY=...`. Leave blank for
+   unencrypted backups (NOT recommended for production).
+2. Restart the backend. Sidebar **Admin -> Backup & Restore**.
+3. **Create Backup** -> a row appears with size, SHA-256, encryption
+   lock, attachment count.
+4. **Verify** -> green banner confirms checksum + decrypt + tar entries.
+5. **Download** -> file lands in your Downloads folder. Encrypted
+   files end in `.bkp.enc`, plaintext in `.bkp.tar.gz`.
+6. Delete a master row (e.g. a Bank), then **Restore** the earlier
+   backup. Type `RESTORE` in the rose modal, leave **safety snapshot**
+   ticked, click **Restore Now**. The deleted bank reappears and a
+   new safety-snapshot backup shows in the list.
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET /api/v1/backups/status` - encryption state, totals, last run
+- `GET/POST/DELETE /api/v1/backups[/{id}]`
+- `GET /api/v1/backups/{id}/verify`
+- `GET /api/v1/backups/{id}/download`
+- `POST /api/v1/backups/{id}/restore` (body: `{confirmation, take_safety_snapshot}`)
+
+Run `pytest -q` -> 41 tests pass (auth + cases + workflow + court +
+notifications + reports + scheduled reports + audit + backup).
+
+> Backups live under `BACKUP_LOCAL_PATH` (default `..\backups`).
+> The Audit Log captures every create / download / delete / restore.
+
+---
+
+## 17. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 

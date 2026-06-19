@@ -6,6 +6,7 @@ from app.api.v1 import (
     approvals,
     audit,
     auth,
+    backup,
     cases,
     court,
     email_log,
@@ -34,3 +35,4 @@ api_router.include_router(email_log.router)
 api_router.include_router(reports.router)
 api_router.include_router(scheduled_reports.router)
 api_router.include_router(audit.router)
+api_router.include_router(backup.router)

@@ -903,14 +903,17 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 9</span><strong>Backup &amp; Restore (PugFin Parity)</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 9 ✓</span><strong>Backup &amp; Restore (PugFin Parity)</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>Port backup service from PugFin App (DB dump + object archive)</li>
-      <li>AES-256 encryption with system key, checksum &amp; manifest</li>
-      <li>Scheduled backups, retention policy, optional S3 offsite</li>
-      <li>Restore wizard with pre-restore safety snapshot</li>
-      <li>Integrity verify job (test-restore in temp schema)</li>
-      <li>All actions audited</li>
+      <li><code>BackupJob</code> + <code>RestoreJob</code> models record every operation with size, SHA-256 checksum, table row counts, attachment count and full manifest</li>
+      <li>Backup engine snapshots every table (SQLAlchemy-driven, dialect-portable) plus the entire <code>storage/</code> attachments tree, packaged as a single <code>tar.gz</code> bundle</li>
+      <li><strong>AES-256-GCM</strong> envelope via <code>cryptography</code>: per-file 12-byte nonce + GCM tag; key from <code>BACKUP_ENCRYPTION_KEY</code> (base64-encoded 32 bytes); plain mode when unset</li>
+      <li>Verify endpoint re-checksums the on-disk file, decrypts (when applicable) and confirms <code>manifest.json</code> + <code>data.json</code> are present</li>
+      <li>Restore wizard: optional auto pre-restore <strong>safety snapshot</strong>, requires typing <code>RESTORE</code>, wipes every table in reverse FK order then replays the bundle, then resets Postgres sequences</li>
+      <li>Sidebar <strong>Backup &amp; Restore</strong> page: KPI strip (count / size / last backup / encryption), Create Backup button with notes, table with Verify / Download / Restore / Delete actions, rose-bordered restore modal</li>
+      <li>All actions audited (create / download / delete / restore) via the Phase 8 chain</li>
+      <li>Migration <code>0008_phase9_backup</code>; tests for encrypted + plaintext backups, verify, restore round-trip, confirmation requirement, delete, and status endpoint</li>
+      <li>Scheduled backups, retention policies and S3 offsite land in Phase 10 (Admin Settings)</li>
     </ul>
   </div>
 

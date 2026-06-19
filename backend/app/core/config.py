@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     brand_company_name: str = "Paris United Group Holding"
     brand_app_url: str = "http://127.0.0.1:3000"
 
+    # Backup (Phase 9)
+    backup_encryption_key: str = ""  # base64-encoded 32 bytes; blank disables encryption
+
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
