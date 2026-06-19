@@ -1,10 +1,13 @@
 """Authentication request/response schemas."""
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    # Plain str (not EmailStr) so internal / .local addresses like
+    # admin@pug.local can sign in. Real-email validation happens at
+    # user-create time, not at login.
+    email: str
     password: str
 
 

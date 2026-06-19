@@ -77,13 +77,38 @@ export async function api<T = unknown>(path: string, opts: Options = {}): Promis
   const data = text ? safeJson(text) : undefined;
 
   if (!res.ok) {
-    const detail =
-      (data && typeof data === 'object' && 'detail' in data
-        ? (data as { detail: string }).detail
-        : null) ?? res.statusText;
-    throw new ApiError(res.status, String(detail), data);
+    throw new ApiError(res.status, extractDetail(data, res.statusText), data);
   }
   return data as T;
+}
+
+/**
+ * FastAPI returns 422 with `detail` as an array of {loc, msg, type} objects,
+ * 4xx errors with `detail` as a string, and some endpoints return no body.
+ * Normalise every case to a human-readable string.
+ */
+function extractDetail(data: unknown, fallback: string): string {
+  if (!data || typeof data !== 'object' || !('detail' in data)) return fallback;
+  const detail = (data as { detail: unknown }).detail;
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((e) => {
+        if (e && typeof e === 'object') {
+          const obj = e as Record<string, unknown>;
+          const msg = typeof obj.msg === 'string' ? obj.msg : '';
+          const loc = Array.isArray(obj.loc) ? obj.loc.join('.') : '';
+          return loc ? `${loc}: ${msg}` : msg || JSON.stringify(e);
+        }
+        return String(e);
+      })
+      .join('; ');
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return fallback;
+  }
 }
 
 function safeJson(text: string): unknown {
