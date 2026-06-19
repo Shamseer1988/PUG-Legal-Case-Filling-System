@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useState } from 'react';
 import {
   LayoutDashboard,
@@ -23,9 +23,13 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  LogOut,
+  User,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasPermission, useAuthStore } from '@/lib/auth';
+import { NotificationBell } from './NotificationBell';
+import { ThemeToggle } from './ThemeToggle';
 
 type Item = {
   href: string;
@@ -92,7 +96,9 @@ const GROUPS: Group[] = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
   const me = useAuthStore((s) => s.me);
+  const clear = useAuthStore((s) => s.clear);
 
   // Sidebar collapsed state (icon-only)
   const [collapsed, setCollapsed] = useState(false);
@@ -106,6 +112,11 @@ export function Sidebar() {
     setExpandedSections((prev) => ({ ...prev, [title]: !prev[title] }));
   }
 
+  function logout() {
+    clear();
+    router.replace('/login');
+  }
+
   return (
     <aside
       className={cn(
@@ -114,15 +125,15 @@ export function Sidebar() {
         collapsed ? 'w-[68px]' : 'w-64',
       )}
     >
-      {/* Brand header */}
-      <div className="flex h-16 items-center gap-3 border-b border-[rgb(var(--color-border))] px-4">
+      {/* Brand header with collapse/expand toggle */}
+      <div className="flex h-16 items-center border-b border-[rgb(var(--color-border))] px-4">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pug-gold-500 text-xs font-extrabold text-pug-navy-800">
           PUG
         </div>
         <div
           className={cn(
-            'overflow-hidden text-sm font-semibold leading-tight whitespace-nowrap transition-all duration-300',
-            collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+            'ml-3 overflow-hidden text-sm font-semibold leading-tight whitespace-nowrap transition-all duration-300',
+            collapsed ? 'w-0 opacity-0' : 'w-auto flex-1 opacity-100',
           )}
         >
           Legal Case
@@ -130,6 +141,23 @@ export function Sidebar() {
             Control System
           </div>
         </div>
+
+        {/* Collapse / Expand icon — top right of header */}
+        <button
+          type="button"
+          onClick={() => setCollapsed((c) => !c)}
+          className={cn(
+            'flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-[rgb(var(--color-muted))] transition-colors hover:bg-[rgb(var(--color-border))]/50 hover:text-[rgb(var(--color-fg))]',
+            collapsed && 'ml-auto',
+          )}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? (
+            <ChevronRight className="h-4 w-4" />
+          ) : (
+            <ChevronLeft className="h-4 w-4" />
+          )}
+        </button>
       </div>
 
       {/* Navigation */}
@@ -225,28 +253,74 @@ export function Sidebar() {
         })}
       </nav>
 
-      {/* Collapse / Expand toggle button at the bottom */}
+      {/* Bottom section: User info + Notifications + Theme + Sign out */}
       <div className="border-t border-[rgb(var(--color-border))] p-3">
-        <button
-          type="button"
-          onClick={() => setCollapsed((c) => !c)}
+        {/* User info */}
+        {me && (
+          <div
+            className={cn(
+              'mb-2 flex items-center rounded-md px-2 py-2',
+              collapsed ? 'justify-center' : 'gap-3',
+            )}
+          >
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-pug-navy-500/15 text-pug-navy-600 dark:bg-pug-navy-400/20 dark:text-pug-navy-200">
+              <User className="h-4 w-4" />
+            </div>
+            <div
+              className={cn(
+                'overflow-hidden whitespace-nowrap transition-all duration-300',
+                collapsed ? 'w-0 opacity-0' : 'w-auto flex-1 opacity-100',
+              )}
+            >
+              <div className="truncate text-xs font-semibold">{me.full_name}</div>
+              <div className="flex items-center gap-1 text-[10px] text-[rgb(var(--color-muted))]">
+                <span className="truncate">{me.role}</span>
+                {me.is_super && (
+                  <span className="shrink-0 rounded-full bg-pug-gold-500/20 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-300">
+                    Super
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Action buttons row */}
+        <div
           className={cn(
-            'flex w-full items-center rounded-md px-2 py-2 text-sm text-[rgb(var(--color-muted))] transition-colors hover:bg-[rgb(var(--color-border))]/40 hover:text-[rgb(var(--color-fg))]',
-            collapsed ? 'justify-center' : 'gap-2',
+            'flex items-center',
+            collapsed ? 'flex-col gap-1' : 'gap-1',
           )}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          {collapsed ? (
-            <ChevronRight className="h-4 w-4 shrink-0" />
-          ) : (
-            <>
-              <ChevronLeft className="h-4 w-4 shrink-0" />
-              <span className="overflow-hidden whitespace-nowrap text-xs font-medium">
-                Collapse
+          <NotificationBell />
+          <ThemeToggle />
+          <button
+            type="button"
+            onClick={logout}
+            title="Sign out"
+            className={cn(
+              'group relative flex items-center rounded-md text-[rgb(var(--color-muted))] transition-colors hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400',
+              collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-2 py-2',
+            )}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            <span
+              className={cn(
+                'overflow-hidden whitespace-nowrap text-xs font-medium transition-all duration-300',
+                collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
+              )}
+            >
+              Sign out
+            </span>
+
+            {/* Tooltip when collapsed */}
+            {collapsed && (
+              <span className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-[rgb(var(--color-fg))] px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--color-bg))] shadow-lg group-hover:block">
+                Sign out
               </span>
-            </>
-          )}
-        </button>
+            )}
+          </button>
+        </div>
       </div>
     </aside>
   );
