@@ -794,13 +794,15 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 1</span><strong>Auth, RBAC, Masters</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 1 ✓</span><strong>Auth, RBAC, Masters</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>JWT auth (access + refresh), Argon2 hashing, password policy</li>
-      <li>Role / Permission model + decorators + Next.js route guards</li>
-      <li>User CRUD, User ↔ Division mapping</li>
-      <li>Masters: Division, Bank, Customer, Salesman, Lawyer, Case Type</li>
-      <li>Brand-styled login screen + light/dark toggle on public page</li>
+      <li>JWT auth (access + refresh), Argon2 hashing — <code>/auth/login</code>, <code>/auth/refresh</code>, <code>/auth/me</code></li>
+      <li>Role + permission model with wildcard support, FastAPI dep <code>require_permission()</code></li>
+      <li>User CRUD with User ↔ Division mapping (<code>/users</code>, <code>/roles</code>)</li>
+      <li>Masters CRUD: Division, Bank, Customer, Salesman, Lawyer, Case Type (<code>/masters/*</code>)</li>
+      <li>Branded login screen, sidebar app shell, protected layout, light/dark toggle</li>
+      <li>Seed CLI: default Admin user + 9 standard roles + sample masters</li>
+      <li>Alembic migration <code>0001_phase1_auth_masters</code></li>
     </ul>
   </div>
 

@@ -227,16 +227,58 @@ All three should exit clean.
 
 ---
 
-## 8. What's NOT in Phase 0 yet
+## 8. Phase 1 — Auth, RBAC, Masters
+
+After running migrations, also seed the default admin + roles + sample masters:
+
+```powershell
+.\scripts\seed.ps1
+```
+
+Then:
+
+1. Open http://127.0.0.1:3000 — you should be redirected to the login screen.
+2. Sign in with `admin@pug.local` / `Admin@123`.
+3. You land on **/dashboard** with the sidebar showing **Workspace**,
+   **Transactions** (placeholders), **Masters**, and **Admin**.
+4. Open each Masters page (Divisions, Banks, Customers, Salesmen, Lawyers,
+   Case Types) — create, edit, delete rows. Required validation surfaces
+   server-side errors as red banners.
+5. Open **Admin > Users** — create a new user, assign a role and divisions.
+   Sign out, sign in as the new user, and confirm the sidebar hides items
+   they don't have permission for.
+6. Open **Admin > Roles & Permissions** — view the 9 system roles. Try
+   creating a custom role and assigning permissions like `cases:read`,
+   `masters:write`, or `*`.
+
+### Phase 1 API endpoints (Swagger)
+
+http://127.0.0.1:8000/docs lists every endpoint:
+
+- `POST /api/v1/auth/login` — returns access + refresh JWTs
+- `POST /api/v1/auth/refresh`
+- `GET  /api/v1/auth/me`
+- `GET/POST/PATCH/DELETE /api/v1/users`
+- `GET/POST/PATCH/DELETE /api/v1/roles`
+- `GET/POST/PATCH/DELETE /api/v1/masters/{divisions|banks|customers|salesmen|lawyers|case-types}`
+
+All `/users`, `/roles` and `/masters` routes require the matching permission
+(`users:read`, `masters:write`, etc.). The Admin role and any user flagged
+`is_super` bypass permission checks.
+
+---
+
+## 9. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 
-- Login / authentication (Phase 1)
-- Users, roles, masters (Phase 1)
 - Case entry form (Phase 2)
-- Approval workflow (Phase 3)
-- Reports / export / backup / email log / audit log (Phases 5–9)
+- Approval workflow + status pipeline (Phase 3)
+- Court filing, hearings, expenses (Phase 4)
+- Notifications & Email Log (Phase 5)
+- Excel / PDF / Print export (Phase 6)
+- Scheduled email reports (Phase 7)
+- Audit log (Phase 8)
+- Backup & restore (Phase 9)
 - Admin settings UI (Phase 10)
-
-Phase 0 only proves the **plumbing**: backend boots, talks to Postgres,
-serves a branded frontend, and CI is wired.
+- Executive dashboard & charts (Phase 11)

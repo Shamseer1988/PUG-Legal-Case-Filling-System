@@ -70,6 +70,15 @@ This will:
 # → http://127.0.0.1:3000
 ```
 
+### Seed default admin + sample masters
+
+```bash
+./scripts/seed.sh        # Linux / macOS
+.\scripts\seed.ps1       # Windows PowerShell
+```
+
+Default login: **admin@pug.local** / **Admin@123**
+
 ## Tech Stack
 
 | Layer       | Tech                                                            |
@@ -91,7 +100,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | Phase | Focus                                  | Status      |
 |------:|----------------------------------------|-------------|
 | 0     | Foundation & Scaffolding               | ✅ Done     |
-| 1     | Auth, RBAC, Masters                    | Pending     |
+| 1     | Auth, RBAC, Masters                    | ✅ Done     |
 | 2     | Legal Case Entry Form                  | Pending     |
 | 3     | Approval Workflow Engine               | Pending     |
 | 4     | Court Filing, Hearings, Expenses       | Pending     |
