@@ -446,7 +446,33 @@ Run `pytest -q` -> 17 tests pass.
 
 ---
 
-## 13. What's NOT done yet
+## 13. Phase 6 - Reports + Excel / PDF / Print
+
+1. Sidebar **Insights -> Reports** lists 6 reports. Click **Case
+   Register**.
+2. Adjust the parameters (Status / Created From / Created To) and click
+   **Run** -> a branded table renders with row counts in the footer.
+3. **Excel** downloads `.xlsx` with: PUG navy title bar, gold accent,
+   frozen header row, zebra striping, type-aware formatting.
+4. **PDF** downloads `.pdf` with gold-accented header on every page,
+   footer with page numbers + UTC timestamp, auto-landscape for wide
+   tables.
+5. **Print** opens the browser print dialog with the table tuned for
+   A4 (app chrome hidden, brand strip on top).
+
+Run `pytest -q` -> 22 tests pass (auth + cases + workflow + court +
+notifications + reports).
+
+API endpoints visible at http://127.0.0.1:8000/docs:
+
+- `GET /api/v1/reports` - registry
+- `GET /api/v1/reports/{key}` - JSON data
+- `GET /api/v1/reports/{key}.xlsx` - Excel download
+- `GET /api/v1/reports/{key}.pdf` - PDF download
+
+---
+
+## 14. What's NOT done yet
 
 These arrive in later phases (so do not test for them):
 

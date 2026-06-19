@@ -17,6 +17,7 @@ import {
   Calendar,
   Banknote,
   Mail,
+  BarChart3,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasPermission, useAuthStore } from '@/lib/auth';
@@ -49,6 +50,10 @@ const GROUPS: Group[] = [
         perm: 'cases:read',
       },
     ],
+  },
+  {
+    title: 'Insights',
+    items: [{ href: '/reports', label: 'Reports', icon: BarChart3, perm: 'cases:read' }],
   },
   {
     title: 'Masters',

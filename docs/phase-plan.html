@@ -862,13 +862,16 @@ PUG-Legal-Case-Filling-System/
   </div>
 
   <div class="phase">
-    <header><span class="badge gold">Phase 6</span><strong>Reports + Excel/PDF/Print Export</strong><span class="tokens">≈ 1 session</span></header>
+    <header><span class="badge green">Phase 6 ✓</span><strong>Reports + Excel/PDF/Print Export</strong><span class="tokens">Completed</span></header>
     <ul>
-      <li>Report registry pattern, parameter UI, role-scoped data</li>
-      <li>Excel renderer with branded header, frozen rows, formatting</li>
-      <li>PDF renderer with PUG header/footer, watermark, page numbers</li>
-      <li>Print-optimized CSS for every list &amp; detail page</li>
-      <li>Case detail report including embedded attachments preview</li>
+      <li>Report registry pattern with 6 starter reports: Case Register, Status Summary, Aging, Division-wise Summary, Hearing Schedule, Expense Report</li>
+      <li>Each report has typed parameters (select/date) consumed by both UI and renderers; role-scoped via division mapping</li>
+      <li>openpyxl Excel renderer: branded navy + gold title bar, frozen header row, zebra rows, type-aware formatting, auto-ish column widths</li>
+      <li>ReportLab PDF renderer: gold-accented header drawn on every page, footer with page numbers and timestamp, auto landscape for wide tables</li>
+      <li>Same shared data shape (<code>title/subtitle/columns/rows</code>) used by JSON, Excel and PDF endpoints</li>
+      <li><code>/reports</code> index + <code>/reports/[key]</code> runner page with parameter form, table preview, Excel / PDF / Print buttons</li>
+      <li>Print-optimised global CSS (<code>@media print</code>): A4, hides app chrome, brand strip, black-on-white tables</li>
+      <li>Tests cover registry listing, JSON data, XLSX (PK header), PDF (%PDF header), and unknown-report 404</li>
     </ul>
   </div>
 
