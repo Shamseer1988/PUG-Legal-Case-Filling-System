@@ -75,11 +75,26 @@ class Settings(BaseSettings):
 
     @property
     def storage_path(self) -> Path:
-        return Path(self.storage_local_path).resolve()
+        return _resolve_data_path(self.storage_local_path)
 
     @property
     def backup_path(self) -> Path:
-        return Path(self.backup_local_path).resolve()
+        return _resolve_data_path(self.backup_local_path)
+
+
+_BACKEND_ROOT = Path(__file__).resolve().parents[2]  # core/config.py -> core -> app -> backend
+
+
+def _resolve_data_path(p: str) -> Path:
+    """Anchor relative data paths (storage/, backups/) to the backend
+    project root so uploads, attachments and backup bundles end up in
+    the same physical directory regardless of the working directory
+    uvicorn was launched from. Absolute paths are returned unchanged.
+    """
+    pp = Path(p)
+    if pp.is_absolute():
+        return pp.resolve()
+    return (_BACKEND_ROOT / pp).resolve()
 
 
 @lru_cache
