@@ -11,6 +11,7 @@ import { CaseActions } from '@/components/CaseActions';
 import { CourtFilingPanel } from '@/components/CourtFilingPanel';
 import { HearingsPanel } from '@/components/HearingsPanel';
 import { CashRequestsPanel } from '@/components/CashRequestsPanel';
+import { ClosurePanel } from '@/components/ClosurePanel';
 
 type ChequeDraft = {
   cheque_number: string;
@@ -275,6 +276,13 @@ export function CaseForm({ caseId }: { caseId?: number }) {
               <HearingsPanel caseId={meta.id} status={meta.status} />
               <CashRequestsPanel caseId={meta.id} status={meta.status} />
             </>
+          )}
+          {(meta.status === 'Approved' || meta.status === 'Filed' || meta.status === 'Closed') && (
+            <ClosurePanel
+              caseId={meta.id}
+              status={meta.status}
+              onChange={() => setReloadKey((k) => k + 1)}
+            />
           )}
         </>
       )}
@@ -851,21 +859,71 @@ function AttachmentManager({
     }
   }
 
+  async function downloadOne(att: CaseFull['attachments'][number]) {
+    try {
+      const token = useAuthStore.getState().accessToken;
+      const r = await fetch(
+        `${API_BASE}/api/v1/cases/${caseId}/attachments/${att.id}/download`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+      );
+      if (!r.ok) throw new Error(`Download failed (${r.status})`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = att.original_filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  async function downloadZip() {
+    try {
+      const token = useAuthStore.getState().accessToken;
+      const r = await fetch(`${API_BASE}/api/v1/cases/${caseId}/attachments.zip`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!r.ok) throw new Error(`ZIP failed (${r.status})`);
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `case-${caseId}-attachments.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
   return (
     <div className="space-y-3">
-      {!locked && (
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40">
-          <Paperclip className="h-4 w-4" />
-          {busy ? 'Uploading...' : 'Attach Files'}
-          <input
-            type="file"
-            multiple
-            disabled={busy}
-            onChange={(e) => upload(e.target.files)}
-            className="hidden"
-          />
-        </label>
-      )}
+      <div className="flex flex-wrap items-center gap-2">
+        {!locked && (
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40">
+            <Paperclip className="h-4 w-4" />
+            {busy ? 'Uploading...' : 'Attach Files'}
+            <input
+              type="file"
+              multiple
+              disabled={busy}
+              onChange={(e) => upload(e.target.files)}
+              className="hidden"
+            />
+          </label>
+        )}
+        {attachments.length > 0 && (
+          <button
+            type="button"
+            onClick={downloadZip}
+            className="inline-flex items-center gap-2 rounded-md border border-pug-gold-500/40 bg-pug-gold-500/10 px-3 py-2 text-sm font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20 dark:text-pug-gold-300"
+          >
+            <Paperclip className="h-4 w-4" /> Download all as ZIP ({attachments.length})
+          </button>
+        )}
+      </div>
       {err && (
         <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
           {err}
@@ -879,14 +937,13 @@ function AttachmentManager({
             <li key={a.id} className="flex items-center gap-3 px-3 py-2">
               <Paperclip className="h-4 w-4 text-[rgb(var(--color-muted))]" />
               <div className="min-w-0 flex-1">
-                <a
-                  href={`${API_BASE}/api/v1/cases/${caseId}/attachments/${a.id}/download`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="truncate font-medium hover:underline"
+                <button
+                  type="button"
+                  onClick={() => downloadOne(a)}
+                  className="truncate text-left font-medium hover:underline"
                 >
                   {a.original_filename}
-                </a>
+                </button>
                 <div className="text-[10px] text-[rgb(var(--color-muted))]">
                   {a.category} &middot; {(a.size_bytes / 1024).toFixed(1)} KB
                 </div>

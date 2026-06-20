@@ -960,6 +960,19 @@ PUG-Legal-Case-Filling-System/
       <li>Version bumped to <strong>1.0.0</strong></li>
     </ul>
   </div>
+
+  <div class="phase">
+    <header><span class="badge green">Phase 13 ✓</span><strong>Closure Flow, Bulk Attachments, Case Cash Flow Report</strong><span class="tokens">Completed</span></header>
+    <ul>
+      <li><strong>Case Closure</strong>: new <code>CaseClosure</code> model with six settlement types - Court Cheque Received, Online Transfer, Cash Received, Settlement Agreement, Write-Off, Other - each with type-specific required fields. <code>POST /api/v1/cases/{id}/close</code> validates settlement-type fields, writes the closure row, transitions the case to <strong>Closed</strong>, appends a timeline entry and a Phase 8 audit event.</li>
+      <li><strong>Bulk attachment download</strong>: <code>GET /api/v1/cases/{id}/attachments.zip</code> streams a ZIP containing every attachment plus a <code>manifest.tsv</code>. The case page gets a "Download all as ZIP" button next to "Attach Files".</li>
+      <li><strong>Attachment download fix</strong>: per-row file links now use <code>fetch + Bearer token</code> + a blob URL instead of a plain <code>&lt;a&gt;</code> tag (which couldn't send Authorization headers).</li>
+      <li><strong>Reports</strong>: every report gains standardised <code>division_id</code> + <code>status</code> server-side filters; the runner page renders a Division dropdown populated from the masters endpoint.</li>
+      <li><strong>Case Cash Flow lifecycle report</strong>: single-case timeline with creation, every workflow transition, cheques, court filing, hearings, cash requests and closure - chronologically sorted, each row tagged with its attachment so the UI can deep-link to it, plus a "Download all attachments as ZIP" header button.</li>
+      <li>All exports remain <strong>server-side rendered</strong>: branded ReportLab PDF (Phase 6 renderer) and openpyxl XLSX. Browser print is now a secondary option.</li>
+      <li>Migration <code>0011_phase13_closure</code>; tests for court-cheque close, type-specific validation, blocked-before-approval close, ZIP archive layout, Cash Flow report shape, and division filter on a report.</li>
+    </ul>
+  </div>
 </section>
 
 <section id="deliverables">

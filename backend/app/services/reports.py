@@ -15,8 +15,9 @@ from typing import Any, Callable
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.case import Case, CaseStatusUpdate
-from app.models.court import CASH_REQUEST_PAID, CashRequest, Hearing
+from app.models.case import Case, CaseAttachment, CaseStatusUpdate, Cheque
+from app.models.closure import CaseClosure
+from app.models.court import CASH_REQUEST_PAID, CashRequest, CourtFiling, Hearing
 from app.models.masters import Customer, Division
 from app.models.user import User
 
@@ -55,6 +56,20 @@ def _scope_cases(db: Session, user: User):
     return q
 
 
+def _apply_common_filters(q, params: dict[str, Any]):
+    """Standard ``division_id`` + ``status`` filters supported by every report."""
+    div = params.get("division_id")
+    if div:
+        try:
+            q = q.filter(Case.division_id == int(div))
+        except (TypeError, ValueError):
+            pass
+    status = (params.get("status") or "").strip()
+    if status:
+        q = q.filter(Case.status == status)
+    return q
+
+
 def _customer_map(db: Session) -> dict[int, str]:
     return {c.id: c.name for c in db.query(Customer).all()}
 
@@ -76,13 +91,10 @@ def _parse_date(s: Any) -> date | None:
 
 # ===================== Case Register =====================
 def case_register(db: Session, user: User, params: dict[str, Any]) -> dict[str, Any]:
-    status = params.get("status") or ""
     date_from = _parse_date(params.get("date_from"))
     date_to = _parse_date(params.get("date_to"))
 
-    q = _scope_cases(db, user)
-    if status:
-        q = q.filter(Case.status == status)
+    q = _apply_common_filters(_scope_cases(db, user), params)
     if date_from:
         q = q.filter(Case.created_at >= datetime.combine(date_from, datetime.min.time()))
     if date_to:
@@ -130,7 +142,7 @@ def case_register(db: Session, user: User, params: dict[str, Any]) -> dict[str, 
 
 # ===================== Status Summary =====================
 def status_summary(db: Session, user: User, params: dict[str, Any]) -> dict[str, Any]:
-    q = _scope_cases(db, user)
+    q = _apply_common_filters(_scope_cases(db, user), params)
     counts = (
         q.with_entities(
             Case.status,
@@ -168,13 +180,14 @@ def aging_report(db: Session, user: User, params: dict[str, Any]) -> dict[str, A
     ]
     rows: list[dict[str, Any]] = []
     for label, start, end in buckets:
-        q = _scope_cases(db, user)
+        q = _apply_common_filters(_scope_cases(db, user), params)
         if start:
             q = q.filter(Case.created_at > start)
         if end:
             q = q.filter(Case.created_at <= end)
-        # not closed
-        q = q.filter(Case.status.notin_(["Closed", "Rejected"]))
+        # not closed (unless user explicitly filtered for one of those)
+        if not (params.get("status") or "").strip():
+            q = q.filter(Case.status.notin_(["Closed", "Rejected"]))
         cases = q.all()
         rows.append(
             {
@@ -201,8 +214,18 @@ def aging_report(db: Session, user: User, params: dict[str, Any]) -> dict[str, A
 def division_summary(db: Session, user: User, params: dict[str, Any]) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     divisions = _division_map(db)
+    # The standalone ``division_id`` filter narrows to a single row.
+    requested_div = params.get("division_id")
     for div_id, div_name in divisions.items():
-        q = _scope_cases(db, user).filter(Case.division_id == div_id)
+        if requested_div:
+            try:
+                if int(requested_div) != div_id:
+                    continue
+            except (TypeError, ValueError):
+                pass
+        q = _apply_common_filters(
+            _scope_cases(db, user).filter(Case.division_id == div_id), params
+        )
         cases = q.all()
         rows.append(
             {
@@ -248,6 +271,15 @@ def hearing_schedule(db: Session, user: User, params: dict[str, Any]) -> dict[st
         perms = user.role.permissions if user.role else []
         if "*" not in perms and user.divisions:
             q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+    div = params.get("division_id")
+    if div:
+        try:
+            q = q.filter(Case.division_id == int(div))
+        except (TypeError, ValueError):
+            pass
+    cstatus = (params.get("status") or "").strip()
+    if cstatus:
+        q = q.filter(Case.status == cstatus)
     q = q.filter(
         (Hearing.hearing_date >= now) & (Hearing.hearing_date <= end)
         | (
@@ -305,6 +337,15 @@ def expense_report(db: Session, user: User, params: dict[str, Any]) -> dict[str,
         perms = user.role.permissions if user.role else []
         if "*" not in perms and user.divisions:
             q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+    div = params.get("division_id")
+    if div:
+        try:
+            q = q.filter(Case.division_id == int(div))
+        except (TypeError, ValueError):
+            pass
+    cstatus = (params.get("status") or "").strip()
+    if cstatus:
+        q = q.filter(Case.status == cstatus)
     if only_paid:
         q = q.filter(CashRequest.status == CASH_REQUEST_PAID)
     rows: list[dict[str, Any]] = []
@@ -338,20 +379,224 @@ def expense_report(db: Session, user: User, params: dict[str, Any]) -> dict[str,
     }
 
 
+# ===================== Case Cash Flow =====================
+def case_cash_flow(db: Session, user: User, params: dict[str, Any]) -> dict[str, Any]:
+    """Lifecycle of one case: every workflow event, cheque, cash request
+    and the closure - in one chronological table. Each row carries
+    ``attachment_id`` and ``attachment_name`` where applicable so the UI
+    can deep-link.
+    """
+    case_no = (params.get("case_no") or "").strip()
+    if not case_no:
+        raise ValueError("case_no is required for the Case Cash Flow report")
+
+    q = _scope_cases(db, user).filter(Case.case_no == case_no)
+    case = q.first()
+    if not case:
+        return {
+            "title": f"Cash Flow - {case_no}",
+            "subtitle": "Case not found or out of your scope.",
+            "columns": [],
+            "rows": [],
+            "case": None,
+            "attachments": [],
+        }
+
+    actors = {
+        u.id: u.full_name
+        for u in db.query(User).filter(
+            User.id.in_(
+                {t.actor_id for t in case.timeline}
+                | {case.created_by_id}
+            )
+        ).all()
+    }
+
+    rows: list[dict[str, Any]] = []
+    # 1. Case creation
+    rows.append(
+        {
+            "when": case.created_at,
+            "phase": "Creation",
+            "event": "Case created",
+            "actor": actors.get(case.created_by_id, ""),
+            "amount": float(case.legal_filing_amount or 0),
+            "command": case.commands or "",
+            "attachment_id": None,
+            "attachment_name": "",
+        }
+    )
+
+    # 2. Workflow timeline
+    for t in case.timeline:
+        rows.append(
+            {
+                "when": t.created_at,
+                "phase": "Workflow",
+                "event": f"{t.action_type}: {t.from_stage} -> {t.to_stage}",
+                "actor": actors.get(t.actor_id, ""),
+                "amount": 0,
+                "command": t.comment or "",
+                "attachment_id": None,
+                "attachment_name": "",
+            }
+        )
+
+    # 3. Cheques recorded on the case
+    for ch in case.cheques:
+        rows.append(
+            {
+                "when": ch.created_at,
+                "phase": "Cheque",
+                "event": f"Cheque {ch.cheque_number} ({ch.cheque_type})",
+                "actor": "",
+                "amount": float(ch.amount or 0),
+                "command": ch.bounce_reason or "",
+                "attachment_id": None,
+                "attachment_name": "",
+            }
+        )
+
+    # 4. Court filing
+    filing = db.query(CourtFiling).filter(CourtFiling.case_id == case.id).first()
+    if filing:
+        rows.append(
+            {
+                "when": filing.created_at,
+                "phase": "Court Filing",
+                "event": (
+                    f"Filed - Police #{filing.police_case_no or '-'}, "
+                    f"Court #{filing.court_case_no or '-'}"
+                ),
+                "actor": actors.get(filing.filed_by_id, ""),
+                "amount": 0,
+                "command": filing.notes or "",
+                "attachment_id": filing.acknowledgment_attachment_id,
+                "attachment_name": "Govt Acknowledgement"
+                if filing.acknowledgment_attachment_id
+                else "",
+            }
+        )
+
+    # 5. Hearings (primary date)
+    hearings = (
+        db.query(Hearing).filter(Hearing.case_id == case.id).order_by(Hearing.id).all()
+    )
+    for h in hearings:
+        rows.append(
+            {
+                "when": h.hearing_date,
+                "phase": "Hearing",
+                "event": h.hearing_type,
+                "actor": actors.get(h.recorded_by_id, ""),
+                "amount": 0,
+                "command": h.outcome or "",
+                "attachment_id": h.attachment_id,
+                "attachment_name": "Hearing attachment" if h.attachment_id else "",
+            }
+        )
+
+    # 6. Cash requests
+    crs = (
+        db.query(CashRequest)
+        .filter(CashRequest.case_id == case.id)
+        .order_by(CashRequest.id)
+        .all()
+    )
+    for cr in crs:
+        signed = float(cr.amount or 0)
+        rows.append(
+            {
+                "when": cr.requested_at or cr.created_at,
+                "phase": "Cash Request",
+                "event": f"{cr.status} - {cr.purpose or '-'}",
+                "actor": actors.get(cr.requested_by_id, ""),
+                "amount": -signed if cr.status == "Paid" else 0,
+                "command": cr.approval_comment or cr.payment_reference or "",
+                "attachment_id": cr.receipt_attachment_id,
+                "attachment_name": "Payment receipt"
+                if cr.receipt_attachment_id
+                else "",
+            }
+        )
+
+    # 7. Closure
+    closure = db.query(CaseClosure).filter(CaseClosure.case_id == case.id).first()
+    if closure:
+        rows.append(
+            {
+                "when": closure.closed_at,
+                "phase": "Closure",
+                "event": f"Closed via {closure.closure_type}",
+                "actor": actors.get(closure.closed_by_id, ""),
+                "amount": float(closure.settled_amount or 0),
+                "command": closure.command or "",
+                "attachment_id": None,
+                "attachment_name": "",
+            }
+        )
+
+    rows.sort(key=lambda r: (r["when"] or datetime.min.replace(tzinfo=timezone.utc)))
+
+    # Attachment list (for the UI's "Download all as ZIP" + per-row links)
+    attachments = [
+        {
+            "id": a.id,
+            "filename": a.original_filename,
+            "category": a.category,
+            "size_bytes": a.size_bytes,
+        }
+        for a in case.attachments
+    ]
+
+    return {
+        "title": f"Cash Flow - {case.case_no}",
+        "subtitle": (
+            f"Lifecycle from creation to {'closure' if closure else case.status}"
+        ),
+        "columns": [
+            {"key": "when", "label": "When", "type": "datetime"},
+            {"key": "phase", "label": "Phase", "type": "text"},
+            {"key": "event", "label": "Event", "type": "text"},
+            {"key": "actor", "label": "Actor", "type": "text"},
+            {"key": "amount", "label": "Amount", "type": "number"},
+            {"key": "command", "label": "Command / Note", "type": "text"},
+            {"key": "attachment_name", "label": "Attachment", "type": "text"},
+        ],
+        "rows": rows,
+        "case": {
+            "id": case.id,
+            "case_no": case.case_no,
+            "status": case.status,
+            "legal_filing_amount": str(case.legal_filing_amount or 0),
+            "attachments_count": len(attachments),
+        },
+        "attachments": attachments,
+    }
+
+
 # ===================== Registry =====================
+_STATUS_OPTIONS = (
+    "", "Draft", "Submitted", "In Review", "Clarification Requested",
+    "Approved", "Filed", "Rejected", "Closed",
+)
+
+# A magic dynamic_source tells the UI to fetch options from a master endpoint.
+_DIVISION_PARAM = ParamDef("division_id", "division_select", "Division")
+_STATUS_PARAM = ParamDef("status", "select", "Status", options=_STATUS_OPTIONS)
+
+
 REPORTS: dict[str, ReportDef] = {
     r.key: r
     for r in [
         ReportDef(
             key="case_register",
             name="Case Register",
-            description="All cases with status / date filters",
+            description="All cases with division / status / date filters",
             permission="cases:read",
             params=(
-                ParamDef("status", "select", "Status", options=(
-                    "", "Draft", "Submitted", "In Review", "Clarification Requested",
-                    "Approved", "Filed", "Rejected", "Closed",
-                )),
+                _DIVISION_PARAM,
+                _STATUS_PARAM,
                 ParamDef("date_from", "date", "Created From"),
                 ParamDef("date_to", "date", "Created To"),
             ),
@@ -362,7 +607,7 @@ REPORTS: dict[str, ReportDef] = {
             name="Status Summary",
             description="Cases grouped by status with totals",
             permission="cases:read",
-            params=(),
+            params=(_DIVISION_PARAM,),
             query=status_summary,
             landscape=False,
         ),
@@ -371,7 +616,7 @@ REPORTS: dict[str, ReportDef] = {
             name="Aging Report",
             description="Open cases bucketed by age",
             permission="cases:read",
-            params=(),
+            params=(_DIVISION_PARAM, _STATUS_PARAM),
             query=aging_report,
             landscape=False,
         ),
@@ -380,7 +625,7 @@ REPORTS: dict[str, ReportDef] = {
             name="Division-wise Summary",
             description="Case volume and value by division",
             permission="cases:read",
-            params=(),
+            params=(_DIVISION_PARAM, _STATUS_PARAM),
             query=division_summary,
             landscape=False,
         ),
@@ -390,6 +635,8 @@ REPORTS: dict[str, ReportDef] = {
             description="Upcoming hearings",
             permission="cases:read",
             params=(
+                _DIVISION_PARAM,
+                _STATUS_PARAM,
                 ParamDef("days", "select", "Range (days)", options=("30", "60", "90", "180")),
             ),
             query=hearing_schedule,
@@ -400,9 +647,27 @@ REPORTS: dict[str, ReportDef] = {
             description="Cash requests, optionally paid only",
             permission="cases:read",
             params=(
+                _DIVISION_PARAM,
+                _STATUS_PARAM,
                 ParamDef("only_paid", "select", "Only Paid", options=("true", "false")),
             ),
             query=expense_report,
+        ),
+        ReportDef(
+            key="case_cash_flow",
+            name="Case Cash Flow (lifecycle)",
+            description=(
+                "Every event in one case: workflow, cheques, court filing, "
+                "hearings, cash requests and closure. Each row links to its "
+                "attachment; bulk-download every file as a ZIP."
+            ),
+            permission="cases:read",
+            params=(
+                ParamDef(
+                    "case_no", "text", "Case No. (PUG-LEGAL-YYYY-NNNN)", required=True
+                ),
+            ),
+            query=case_cash_flow,
         ),
     ]
 }

@@ -4,6 +4,7 @@ from app.db.base import Base
 from app.models.audit import AuditLog
 from app.models.backup import BackupJob, RestoreJob
 from app.models.case import Case, CaseAttachment, CaseNoSequence, CaseStatusUpdate, Cheque
+from app.models.closure import CaseClosure
 from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
 from app.models.notification import EmailLog, Notification
@@ -30,6 +31,7 @@ __all__ = [
     "CourtFiling",
     "Hearing",
     "CashRequest",
+    "CaseClosure",
     "Notification",
     "EmailLog",
     "ScheduledReport",

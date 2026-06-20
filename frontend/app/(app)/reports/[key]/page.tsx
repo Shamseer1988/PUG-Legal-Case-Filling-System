@@ -1,6 +1,13 @@
 'use client';
 
-import { Download, FileSpreadsheet, FileText, Printer, RefreshCw } from 'lucide-react';
+import {
+  Download,
+  FileSpreadsheet,
+  FileText,
+  Paperclip,
+  Printer,
+  RefreshCw,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -30,7 +37,17 @@ type ReportData = {
   columns: ReportColumn[];
   rows: Record<string, unknown>[];
   params: Record<string, string>;
+  case?: {
+    id: number;
+    case_no: string;
+    status: string;
+    legal_filing_amount: string;
+    attachments_count: number;
+  } | null;
+  attachments?: { id: number; filename: string; category: string; size_bytes: number }[];
 };
+
+type Division = { id: number; name: string };
 
 export default function ReportRunnerPage() {
   const params = useParams<{ key: string }>();
@@ -40,8 +57,16 @@ export default function ReportRunnerPage() {
   const [descriptor, setDescriptor] = useState<ReportDescriptor | null>(null);
   const [paramValues, setParamValues] = useState<Record<string, string>>({});
   const [data, setData] = useState<ReportData | null>(null);
+  const [divisions, setDivisions] = useState<Division[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+
+  // Populate the division dropdown once
+  useEffect(() => {
+    api<Division[]>('/api/v1/masters/divisions')
+      .then(setDivisions)
+      .catch(() => setDivisions([]));
+  }, []);
 
   useEffect(() => {
     (async () => {
@@ -159,6 +184,19 @@ export default function ReportRunnerPage() {
                     </option>
                   ))}
                 </select>
+              ) : p.type === 'division_select' ? (
+                <select
+                  value={paramValues[p.name] ?? ''}
+                  onChange={(e) => up(p.name, e.target.value)}
+                  className="rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm"
+                >
+                  <option value="">All</option>
+                  {divisions.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
               ) : p.type === 'date' ? (
                 <input
                   type="date"
@@ -190,6 +228,14 @@ export default function ReportRunnerPage() {
         <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
           {err}
         </div>
+      )}
+
+      {data?.case && (
+        <CaseFlowHeader
+          caseInfo={data.case}
+          attachments={data.attachments ?? []}
+          token={token}
+        />
       )}
 
       {data && (
@@ -240,7 +286,14 @@ export default function ReportRunnerPage() {
                               : '')
                           }
                         >
-                          {formatCell(row[c.key], c.type)}
+                          {c.key === 'attachment_name' && row['attachment_id']
+                            ? renderAttachmentLink(
+                                data.case?.id ?? null,
+                                Number(row['attachment_id']),
+                                String(row['attachment_name'] ?? 'Open'),
+                                token,
+                              )
+                            : formatCell(row[c.key], c.type)}
                         </td>
                       ))}
                     </tr>
@@ -272,4 +325,90 @@ function formatCell(v: unknown, type: string): string {
   if (type === 'datetime') return new Date(String(v)).toLocaleString();
   if (type === 'date') return String(v).slice(0, 10);
   return String(v);
+}
+
+function renderAttachmentLink(
+  caseId: number | null,
+  attId: number,
+  label: string,
+  token: string | null,
+): React.ReactNode {
+  if (!caseId) return label;
+  async function fetchAndOpen() {
+    const r = await fetch(
+      `${API_BASE}/api/v1/cases/${caseId}/attachments/${attId}/download`,
+      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
+    );
+    if (!r.ok) {
+      alert(`Download failed (${r.status})`);
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  }
+  return (
+    <button
+      type="button"
+      onClick={fetchAndOpen}
+      className="inline-flex items-center gap-1 rounded bg-pug-gold-500/15 px-2 py-0.5 text-[11px] font-semibold text-pug-gold-700 hover:bg-pug-gold-500/25 dark:text-pug-gold-300"
+    >
+      <Paperclip className="h-3 w-3" />
+      {label}
+    </button>
+  );
+}
+
+function CaseFlowHeader({
+  caseInfo,
+  attachments,
+  token,
+}: {
+  caseInfo: NonNullable<ReportData['case']>;
+  attachments: NonNullable<ReportData['attachments']>;
+  token: string | null;
+}) {
+  async function downloadZip() {
+    const r = await fetch(`${API_BASE}/api/v1/cases/${caseInfo.id}/attachments.zip`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    });
+    if (!r.ok) {
+      alert(`ZIP failed (${r.status})`);
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${caseInfo.case_no}-attachments.zip`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+  return (
+    <section className="rounded-xl border border-pug-gold-500/40 bg-pug-gold-500/5 p-4 shadow-soft">
+      <div className="flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="font-mono text-sm font-semibold">{caseInfo.case_no}</div>
+          <div className="text-xs text-[rgb(var(--color-muted))]">
+            Status: <strong>{caseInfo.status}</strong> &middot; Legal Amount:{' '}
+            {Number(caseInfo.legal_filing_amount).toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}{' '}
+            &middot; {caseInfo.attachments_count} attachment(s)
+          </div>
+        </div>
+        {attachments.length > 0 && (
+          <button
+            type="button"
+            onClick={downloadZip}
+            className="inline-flex items-center gap-2 rounded-md bg-pug-gold-500 px-3 py-2 text-sm font-semibold text-pug-navy-800 hover:bg-pug-gold-400"
+          >
+            <Paperclip className="h-4 w-4" /> Download all attachments as ZIP
+          </button>
+        )}
+      </div>
+    </section>
+  );
 }

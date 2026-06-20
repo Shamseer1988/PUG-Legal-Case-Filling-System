@@ -112,6 +112,7 @@ See [`docs/phase-plan.html`](docs/phase-plan.html) for the full roadmap.
 | 10    | System Settings & Admin Console        | ✅ Done     |
 | 11    | Executive Dashboard & Charts           | ✅ Done     |
 | 12    | Hardening, Tests, Deploy               | ✅ Done     |
+| 13    | Closure Flow + Bulk Attachments + Cash Flow Report | ✅ Done |
 
 All 13 phases complete. Version: **1.0.0**.
 

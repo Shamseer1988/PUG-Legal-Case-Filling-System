@@ -25,7 +25,15 @@ from app.schemas.case import (
     CaseRead,
     CaseUpdate,
 )
-from app.services import audit_service, case_service, render, storage, workflow_service
+from app.schemas.closure import ClosureCreate, ClosureRead
+from app.services import (
+    audit_service,
+    case_service,
+    closure_service,
+    render,
+    storage,
+    workflow_service,
+)
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -291,6 +299,105 @@ def print_case(
         content=pdf_bytes,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+# ----------------- Bulk attachments (ZIP) -----------------
+@router.get("/{case_id}/attachments.zip")
+def download_attachments_zip(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> Response:
+    """One-click ZIP of every attachment on the case."""
+    import io
+    import zipfile
+
+    case = _get_case_or_404(db, user, case_id)
+    atts = list(case.attachments)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        seen: dict[str, int] = {}
+        for a in atts:
+            path = storage.get_case_attachment_path(case.id, a.stored_filename)
+            if not path.exists():
+                continue
+            name = a.original_filename or a.stored_filename
+            # Disambiguate if multiple files share a name
+            if name in seen:
+                seen[name] += 1
+                stem, _, ext = name.rpartition(".")
+                name = f"{stem or name}-{seen[name]}{('.' + ext) if ext else ''}"
+            else:
+                seen[name] = 0
+            try:
+                zf.write(path, arcname=name)
+            except Exception:  # pragma: no cover - skip unreadable file
+                continue
+        # Manifest with original metadata
+        manifest = "\n".join(
+            f"{a.id}\t{a.category}\t{a.size_bytes}\t{a.original_filename}"
+            for a in atts
+        )
+        zf.writestr("manifest.tsv", manifest)
+
+    audit_service.record_event(
+        db,
+        action="attachments_zip",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Downloaded ZIP of {len(atts)} attachment(s)",
+        actor=user,
+        commit=True,
+    )
+
+    fname = f"{case.case_no}-attachments.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ----------------- Closure -----------------
+@router.get("/{case_id}/closure", response_model=ClosureRead | None)
+def get_case_closure(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+):
+    case = _get_case_or_404(db, user, case_id)
+    closure = closure_service.get_closure(db, case)
+    if not closure:
+        return None
+    closed_by = db.get(User, closure.closed_by_id)
+    return ClosureRead(
+        **{c: getattr(closure, c) for c in ClosureRead.model_fields if hasattr(closure, c)},
+        closed_by_name=closed_by.full_name if closed_by else "",
+    )
+
+
+@router.post(
+    "/{case_id}/close",
+    response_model=ClosureRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def close_case(
+    case_id: int,
+    payload: ClosureCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+):
+    case = _get_case_or_404(db, user, case_id)
+    try:
+        closure = closure_service.close_case(db, case, user, payload)
+    except closure_service.ClosureError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    closed_by = db.get(User, closure.closed_by_id)
+    return ClosureRead(
+        **{c: getattr(closure, c) for c in ClosureRead.model_fields if hasattr(closure, c)},
+        closed_by_name=closed_by.full_name if closed_by else "",
     )
 
 
