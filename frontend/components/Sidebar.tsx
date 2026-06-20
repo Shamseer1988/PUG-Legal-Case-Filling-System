@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasPermission, useAuthStore } from '@/lib/auth';
+import { API_BASE } from '@/lib/api';
 
 
 type Item = {
@@ -107,6 +108,8 @@ export function Sidebar() {
   const me = useAuthStore((s) => s.me);
   const clear = useAuthStore((s) => s.clear);
 
+  const [logoErr, setLogoErr] = useState(false);
+
   // Sidebar collapsed state (icon-only)
   const [collapsed, setCollapsed] = useState(false);
 
@@ -139,9 +142,21 @@ export function Sidebar() {
           collapsed ? 'pl-2.5 pr-1.5 gap-1 justify-between' : 'px-4 justify-between',
         )}
       >
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pug-gold-500 text-xs font-extrabold text-pug-navy-800">
-          PUG
-        </div>
+        {logoErr ? (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-pug-gold-500 text-xs font-extrabold text-pug-navy-800">
+            PUG
+          </div>
+        ) : (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`${API_BASE}/api/v1/settings/public/logo`}
+              alt="Logo"
+              className="h-full w-full object-cover"
+              onError={() => setLogoErr(true)}
+            />
+          </div>
+        )}
         <div
           className={cn(
             'ml-3 overflow-hidden text-sm font-semibold leading-tight whitespace-nowrap transition-all duration-300',

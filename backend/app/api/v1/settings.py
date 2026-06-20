@@ -1,8 +1,11 @@
-"""System settings + admin actions (test send, diagnostics)."""
+"""System settings + admin actions (test send, diagnostics, logo, favicon)."""
 
+import time
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
@@ -115,3 +118,121 @@ def smtp_test_send(
         "error": log.error,
         "email_log_id": log.id,
     }
+
+
+@router.post("/upload")
+def upload_branding_file(
+    type: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(ADMIN_SETTINGS)),
+) -> dict[str, Any]:
+    if type not in ("logo", "favicon"):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid upload type. Must be 'logo' or 'favicon'.",
+        )
+
+    ext = Path(file.filename or "").suffix.lower()
+    allowed_exts = {
+        "logo": {".png", ".jpg", ".jpeg", ".webp", ".svg"},
+        "favicon": {".ico", ".png", ".jpg", ".jpeg", ".gif"},
+    }[type]
+
+    if ext not in allowed_exts:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file extension for {type}. Allowed extensions: {', '.join(allowed_exts)}",
+        )
+
+    # Validate size: 2MB limit
+    MAX_SIZE = 2 * 1024 * 1024
+    try:
+        content = file.file.read(MAX_SIZE + 1)
+        if len(content) > MAX_SIZE:
+            raise HTTPException(
+                status_code=400, detail="File too large. Max size is 2MB."
+            )
+        file.file.seek(0)
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=400, detail="Failed to read file.")
+
+    from app.core.config import settings as app_settings
+
+    branding_dir = app_settings.storage_path / "branding"
+    branding_dir.mkdir(parents=True, exist_ok=True)
+
+    # Remove any existing files for this type
+    for old_file in branding_dir.glob(f"{type}.*"):
+        try:
+            old_file.unlink()
+        except Exception:
+            pass
+
+    dest_path = branding_dir / f"{type}{ext}"
+    with dest_path.open("wb") as out:
+        out.write(content)
+
+    key = f"company.{type}_url"
+    t = int(time.time())
+    url = f"/api/v1/settings/public/{type}?t={t}"
+    settings_service.set_value(db, key, url, user_id=user.id)
+    db.commit()
+
+    return {"key": key, "url": url}
+
+
+@router.get("/public/logo")
+def get_public_logo() -> FileResponse:
+    from app.core.config import settings as app_settings
+
+    branding_dir = app_settings.storage_path / "branding"
+    if branding_dir.exists():
+        for path in branding_dir.glob("logo.*"):
+            if path.is_file():
+                ext = path.suffix.lower()
+                media_types = {
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".webp": "image/webp",
+                    ".svg": "image/svg+xml",
+                }
+                return FileResponse(path, media_type=media_types.get(ext, "image/png"))
+
+    root_dir = Path(__file__).resolve().parents[4]
+    fallback_path = root_dir / "assets" / "pug_logo_gold.png"
+    if fallback_path.exists():
+        return FileResponse(fallback_path, media_type="image/png")
+
+    raise HTTPException(status_code=404, detail="Logo not found.")
+
+
+@router.get("/public/favicon")
+def get_public_favicon() -> FileResponse:
+    from app.core.config import settings as app_settings
+
+    branding_dir = app_settings.storage_path / "branding"
+    if branding_dir.exists():
+        for path in branding_dir.glob("favicon.*"):
+            if path.is_file():
+                ext = path.suffix.lower()
+                media_types = {
+                    ".ico": "image/x-icon",
+                    ".png": "image/png",
+                    ".jpg": "image/jpeg",
+                    ".jpeg": "image/jpeg",
+                    ".gif": "image/gif",
+                }
+                return FileResponse(
+                    path, media_type=media_types.get(ext, "image/x-icon")
+                )
+
+    root_dir = Path(__file__).resolve().parents[4]
+    fallback_path = root_dir / "assets" / "favicon.ico"
+    if fallback_path.exists():
+        return FileResponse(fallback_path, media_type="image/x-icon")
+
+    raise HTTPException(status_code=404, detail="Favicon not found.")

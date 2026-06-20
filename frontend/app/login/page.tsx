@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore, type Me } from '@/lib/auth';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [needsTotp, setNeedsTotp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [logoErr, setLogoErr] = useState(false);
 
   useEffect(() => {
     if (accessToken) router.replace('/dashboard');
@@ -58,9 +59,21 @@ export default function LoginPage() {
       {/* Brand side */}
       <div className="relative hidden flex-col justify-between bg-gradient-to-br from-pug-navy-800 via-pug-navy-600 to-pug-navy-500 p-10 text-white md:flex">
         <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-pug-gold-500 font-extrabold text-pug-navy-800 shadow-gold">
-            PUG
-          </div>
+          {logoErr ? (
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-pug-gold-500 font-extrabold text-pug-navy-800 shadow-gold">
+              PUG
+            </div>
+          ) : (
+            <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-white/10 shadow-gold">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`${API_BASE}/api/v1/settings/public/logo`}
+                alt="Logo"
+                className="h-full w-full object-cover"
+                onError={() => setLogoErr(true)}
+              />
+            </div>
+          )}
           <div>
             <div className="text-xs font-semibold uppercase tracking-widest text-pug-gold-300">
               Paris United Group Holding
@@ -87,9 +100,21 @@ export default function LoginPage() {
         </div>
         <div className="w-full max-w-sm rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-8 shadow-soft">
           <div className="mb-6 flex items-center gap-2 md:hidden">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-pug-gold-500 font-extrabold text-pug-navy-800">
-              PUG
-            </div>
+            {logoErr ? (
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-pug-gold-500 font-extrabold text-pug-navy-800">
+                PUG
+              </div>
+            ) : (
+              <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`${API_BASE}/api/v1/settings/public/logo`}
+                  alt="Logo"
+                  className="h-full w-full object-cover"
+                  onError={() => setLogoErr(true)}
+                />
+              </div>
+            )}
             <div className="text-sm font-semibold">Legal Case Control System</div>
           </div>
           <h1 className="text-xl font-semibold">Sign in</h1>

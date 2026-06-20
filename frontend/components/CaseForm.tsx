@@ -100,6 +100,7 @@ const EMPTY_CASE: CaseDraft = {
 export function CaseForm({ caseId }: { caseId?: number }) {
   const router = useRouter();
   const me = useAuthStore((s) => s.me);
+  const [logoErr, setLogoErr] = useState(false);
 
   const customers = useMasterOptions('/api/v1/masters/customers', 'name');
   const divisions = useMasterOptions('/api/v1/masters/divisions', 'name');
@@ -216,9 +217,21 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       {/* Brand banner */}
       <div className="rounded-xl border-b-2 border-pug-gold-500 bg-gradient-to-br from-pug-navy-800 via-pug-navy-600 to-pug-navy-500 px-6 py-4 text-white">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-pug-gold-500 text-sm font-extrabold text-pug-navy-800">
-            PUG
-          </div>
+          {logoErr ? (
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-pug-gold-500 text-sm font-extrabold text-pug-navy-800">
+              PUG
+            </div>
+          ) : (
+            <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/20 bg-white/10">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`${API_BASE}/api/v1/settings/public/logo`}
+                alt="Logo"
+                className="h-full w-full object-cover"
+                onError={() => setLogoErr(true)}
+              />
+            </div>
+          )}
           <div>
             <div className="text-[10px] font-semibold uppercase tracking-widest text-pug-gold-300">
               Paris United Group Holding

@@ -1,8 +1,9 @@
 'use client';
 
-import { Save, Send, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { Save, Send, AlertTriangle, CheckCircle2, Upload } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { api, ApiError, API_BASE } from '@/lib/api';
+import { useAuthStore } from '@/lib/auth';
 
 type Field = {
   key: string;
@@ -253,6 +254,14 @@ function renderInput(
   cls: string,
 ) {
   switch (f.type) {
+    case 'image':
+      return (
+        <ImageUploadRow
+          field={f}
+          value={String(value ?? '')}
+          onChange={onChange}
+        />
+      );
     case 'checkbox':
       return (
         <div className="flex items-center">
@@ -358,4 +367,117 @@ function renderInput(
         />
       );
   }
+}
+
+function ImageUploadRow({
+  field,
+  value,
+  onChange,
+}: {
+  field: Field;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const token = useAuthStore((s) => s.accessToken);
+  const [hasError, setHasError] = useState(false);
+
+  useEffect(() => {
+    setHasError(false);
+  }, [value]);
+
+  const uploadType = field.key.includes('favicon') ? 'favicon' : 'logo';
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
+
+    const allowedExtensions =
+      uploadType === 'favicon'
+        ? ['.ico', '.png', '.jpg', '.jpeg', '.gif']
+        : ['.png', '.jpg', '.jpeg', '.webp', '.svg'];
+    const fileExt = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowedExtensions.includes(fileExt)) {
+      setUploadErr(`Invalid extension. Allowed: ${allowedExtensions.join(', ')}`);
+      return;
+    }
+
+    if (file.size > 2 * 1024 * 1024) {
+      setUploadErr('File too large. Max size is 2MB.');
+      return;
+    }
+
+    setUploading(true);
+    setUploadErr(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+
+      const res = await fetch(`${API_BASE}/api/v1/settings/upload?type=${uploadType}`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.detail || 'Upload failed');
+      }
+
+      const data = await res.json();
+      onChange(data.url);
+    } catch (err) {
+      setUploadErr((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const previewUrl = value
+    ? value.startsWith('http')
+      ? value
+      : `${API_BASE}${value}`
+    : uploadType === 'favicon'
+    ? `${API_BASE}/api/v1/settings/public/favicon`
+    : `${API_BASE}/api/v1/settings/public/logo`;
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-4 rounded-md border border-[rgb(var(--color-border))] p-3">
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg bg-[rgb(var(--color-border))]/20 border border-[rgb(var(--color-border))] overflow-hidden">
+          {hasError ? (
+            <div className="text-[10px] text-[rgb(var(--color-muted))] text-center">No preview</div>
+          ) : (
+            /* eslint-disable-next-line @next/next/no-img-element */
+            <img
+              src={previewUrl}
+              alt={field.label}
+              className="max-h-full max-w-full object-contain"
+              onError={() => setHasError(true)}
+            />
+          )}
+        </div>
+
+        <div className="flex-1 space-y-1">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md bg-pug-navy-700 hover:bg-pug-navy-600 px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50">
+            <Upload className="h-3.5 w-3.5" />
+            {uploading ? 'Uploading...' : 'Upload Image'}
+            <input
+              type="file"
+              accept={uploadType === 'favicon' ? '.ico,.png,.jpg,.jpeg,.gif' : 'image/*'}
+              className="hidden"
+              onChange={handleFileChange}
+              disabled={uploading}
+            />
+          </label>
+          <div className="text-[10px] text-[rgb(var(--color-muted))] truncate max-w-[200px]">
+            {value ? 'Uploaded custom asset' : 'Using default template asset'}
+          </div>
+        </div>
+      </div>
+      {uploadErr && <div className="text-xs text-rose-500">{uploadErr}</div>}
+    </div>
+  );
 }

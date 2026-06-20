@@ -40,15 +40,20 @@ def client(tmp_path, monkeypatch):
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
+    # seed using our own session
     from app.db import session as session_mod
+    import app.services.seed as seed_mod
 
     orig = session_mod.SessionLocal
+    orig_seed = seed_mod.SessionLocal
     session_mod.SessionLocal = TestingSessionLocal
+    seed_mod.SessionLocal = TestingSessionLocal
     try:
         run_seed()
         yield TestClient(app)
     finally:
         session_mod.SessionLocal = orig
+        seed_mod.SessionLocal = orig_seed
         app.dependency_overrides.clear()
 
 
@@ -135,7 +140,7 @@ def test_smtp_test_send_console_mode(client: TestClient) -> None:
     r = client.post(
         "/api/v1/settings/smtp/test-send",
         headers=h,
-        json={"to": "test@pug.local"},
+        json={"to": "test@example.com"},
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -154,3 +159,41 @@ def test_diagnostics(client: TestClient) -> None:
     # Database should report ok
     db_check = next(c for c in body["checks"] if c["name"] == "Database")
     assert db_check["ok"] is True
+
+
+def test_branding_logo_favicon_upload_and_retrieval(client: TestClient) -> None:
+    h = _login(client)
+
+    # 1. Test uploading invalid file type
+    bad_file = {"file": ("test.txt", b"plain text content", "text/plain")}
+    r = client.post("/api/v1/settings/upload?type=logo", headers=h, files=bad_file)
+    assert r.status_code == 400
+    assert "Invalid file extension" in r.json()["detail"]
+
+    # 2. Test uploading valid logo
+    logo_file = {"file": ("test_logo.png", b"fake png data", "image/png")}
+    r = client.post("/api/v1/settings/upload?type=logo", headers=h, files=logo_file)
+    assert r.status_code == 200
+    assert r.json()["key"] == "company.logo_url"
+    logo_url = r.json()["url"]
+    assert logo_url.startswith("/api/v1/settings/public/logo?t=")
+
+    # 3. Test retrieving logo (public route, no headers)
+    r_public = client.get("/api/v1/settings/public/logo")
+    assert r_public.status_code == 200
+    assert r_public.content == b"fake png data"
+    assert r_public.headers["content-type"] == "image/png"
+
+    # 4. Test uploading valid favicon
+    favicon_file = {"file": ("test_fav.ico", b"fake ico data", "image/x-icon")}
+    r = client.post("/api/v1/settings/upload?type=favicon", headers=h, files=favicon_file)
+    assert r.status_code == 200
+    assert r.json()["key"] == "company.favicon_url"
+    favicon_url = r.json()["url"]
+    assert favicon_url.startswith("/api/v1/settings/public/favicon?t=")
+
+    # 5. Test retrieving favicon (public route, no headers)
+    r_fav_public = client.get("/api/v1/settings/public/favicon")
+    assert r_fav_public.status_code == 200
+    assert r_fav_public.content == b"fake ico data"
+    assert r_fav_public.headers["content-type"] == "image/x-icon"

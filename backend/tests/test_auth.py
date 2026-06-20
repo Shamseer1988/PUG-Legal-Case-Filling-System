@@ -34,14 +34,18 @@ def client(tmp_path, monkeypatch):
 
     # seed using our own session
     from app.db import session as session_mod
+    import app.services.seed as seed_mod
 
     orig = session_mod.SessionLocal
+    orig_seed = seed_mod.SessionLocal
     session_mod.SessionLocal = TestingSessionLocal
+    seed_mod.SessionLocal = TestingSessionLocal
     try:
         run_seed()
         yield TestClient(app)
     finally:
         session_mod.SessionLocal = orig
+        seed_mod.SessionLocal = orig_seed
         app.dependency_overrides.clear()
 
 
