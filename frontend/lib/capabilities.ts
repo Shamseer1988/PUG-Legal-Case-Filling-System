@@ -72,6 +72,41 @@ export const MENU = {
   ADMIN_DIAGNOSTICS: 'admin.diagnostics',
 } as const;
 
+// Pathname -> menu ID. Used by RouteGate so a user typing a URL
+// directly into the address bar still hits the menu permission check.
+// Order matters: the first regex that matches wins, so list deeper
+// paths before their parents.
+const PATH_MENU: Array<[RegExp, string]> = [
+  [/^\/dashboard(\/|$)/, MENU.DASHBOARD],
+  [/^\/profile(\/|$)/, MENU.PROFILE],
+  [/^\/cases(\/|$)/, MENU.CASES],
+  [/^\/approvals(\/|$)/, MENU.APPROVALS],
+  [/^\/hearings(\/|$)/, MENU.HEARINGS],
+  [/^\/cash-requests(\/|$)/, MENU.CASH_REQUESTS],
+  [/^\/reports(\/|$)/, MENU.REPORTS],
+  [/^\/schedules(\/|$)/, MENU.SCHEDULED_REPORTS],
+  [/^\/masters\/divisions(\/|$)/, MENU.MASTERS_DIVISIONS],
+  [/^\/masters\/banks(\/|$)/, MENU.MASTERS_BANKS],
+  [/^\/masters\/customers(\/|$)/, MENU.MASTERS_CUSTOMERS],
+  [/^\/masters\/salesmen(\/|$)/, MENU.MASTERS_SALESMEN],
+  [/^\/masters\/lawyers(\/|$)/, MENU.MASTERS_LAWYERS],
+  [/^\/masters\/case-types(\/|$)/, MENU.MASTERS_CASE_TYPES],
+  [/^\/admin\/users(\/|$)/, MENU.ADMIN_USERS],
+  [/^\/admin\/roles(\/|$)/, MENU.ADMIN_ROLES],
+  [/^\/admin\/email-log(\/|$)/, MENU.ADMIN_EMAIL_LOG],
+  [/^\/admin\/audit-log(\/|$)/, MENU.ADMIN_AUDIT_LOG],
+  [/^\/admin\/backups(\/|$)/, MENU.ADMIN_BACKUPS],
+  [/^\/admin\/settings(\/|$)/, MENU.ADMIN_SETTINGS],
+  [/^\/admin\/diagnostics(\/|$)/, MENU.ADMIN_DIAGNOSTICS],
+];
+
+export function menuFromPath(pathname: string): string | null {
+  for (const [re, id] of PATH_MENU) {
+    if (re.test(pathname)) return id;
+  }
+  return null;
+}
+
 // Canonical action IDs — must match backend/app/core/permissions.py
 export const ACTION = {
   CASE_CREATE: 'case.create',

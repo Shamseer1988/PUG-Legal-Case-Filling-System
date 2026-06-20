@@ -3,7 +3,7 @@
 import { Banknote, Check, Plus, Send, Wallet, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
-import { hasPermission, useAuthStore } from '@/lib/auth';
+import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 
 type CashRequest = {
   id: number;
@@ -31,10 +31,10 @@ type Summary = {
 type Props = { caseId: number; status: string };
 
 export function CashRequestsPanel({ caseId, status }: Props) {
-  const me = useAuthStore((s) => s.me);
-  const canRequest = hasPermission(me, 'expenses:request');
-  const canApprove = hasPermission(me, 'expenses:approve');
-  const canPay = hasPermission(me, 'expenses:pay');
+  const caps = useCapabilitiesStore((s) => s.caps);
+  const canRequest = canDoAction(caps, ACTION.CASH_REQUEST);
+  const canApprove = canDoAction(caps, ACTION.CASH_APPROVE);
+  const canPay = canDoAction(caps, ACTION.CASH_PAY);
 
   const [rows, setRows] = useState<CashRequest[]>([]);
   const [summary, setSummary] = useState<Summary | null>(null);

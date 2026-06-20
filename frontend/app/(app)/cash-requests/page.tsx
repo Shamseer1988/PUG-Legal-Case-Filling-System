@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { Check, Wallet, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
-import { hasPermission, useAuthStore } from '@/lib/auth';
+import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 
 type CashRequest = {
   id: number;
@@ -26,9 +26,10 @@ type CashRequest = {
 const STATUSES = ['', 'Requested', 'Approved', 'Rejected', 'Paid'];
 
 export default function CashRequestsInboxPage() {
-  const me = useAuthStore((s) => s.me);
-  const canApprove = hasPermission(me, 'expenses:approve');
-  const canPay = hasPermission(me, 'expenses:pay');
+  const caps = useCapabilitiesStore((s) => s.caps);
+  const canApprove = canDoAction(caps, ACTION.CASH_APPROVE);
+  const canPay = canDoAction(caps, ACTION.CASH_PAY);
+  const readOnly = !canApprove && !canPay;
 
   const [rows, setRows] = useState<CashRequest[]>([]);
   const [filter, setFilter] = useState<string>('Requested');
@@ -86,7 +87,14 @@ export default function CashRequestsInboxPage() {
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-semibold">Cash Requests</h1>
+          <h1 className="flex items-center gap-2 text-xl font-semibold">
+            Cash Requests
+            {readOnly && (
+              <span className="rounded-full border border-[rgb(var(--color-border))] bg-[rgb(var(--color-border))]/30 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                Read-only
+              </span>
+            )}
+          </h1>
           <p className="text-xs text-[rgb(var(--color-muted))]">
             Lawyer requests, FM approvals, and Accountant payments across cases.
           </p>
