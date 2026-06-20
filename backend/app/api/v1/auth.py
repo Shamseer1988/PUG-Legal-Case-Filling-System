@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core import request_context
 from app.core.deps import get_current_user
 from app.core.hardening import login_rate_limit, reset_login_rate
+from app.core.permissions import capabilities_for_role
 from app.core.security import (
     create_access_token,
     create_refresh_token,
@@ -17,6 +18,7 @@ from app.core.security import (
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
+    CapabilitiesResponse,
     LoginRequest,
     MeResponse,
     RefreshRequest,
@@ -123,6 +125,26 @@ def me(user: User = Depends(get_current_user)) -> MeResponse:
         is_super=user.is_super,
         divisions=[d.id for d in user.divisions],
         totp_enabled=user.totp_enabled,
+    )
+
+
+@router.get("/me/capabilities", response_model=CapabilitiesResponse)
+def my_capabilities(user: User = Depends(get_current_user)) -> CapabilitiesResponse:
+    """Return the role's menu / action / data-scope bundle.
+
+    The frontend reads this once after login (and after refresh) and
+    uses it to hide unauthorised menu items, action buttons and panels
+    instead of re-deriving role logic in TypeScript.
+    """
+    role_name = user.role.name if user.role else ""
+    bundle = capabilities_for_role(role_name, user.is_super)
+    return CapabilitiesResponse(
+        role=role_name,
+        is_super=user.is_super,
+        menus=bundle["menus"],
+        actions=bundle["actions"],
+        scope=bundle["scope"],
+        divisions=[d.id for d in user.divisions],
     )
 
 

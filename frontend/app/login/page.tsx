@@ -4,11 +4,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore, type Me } from '@/lib/auth';
+import { useCapabilitiesStore } from '@/lib/capabilities';
 import { ThemeToggle } from '@/components/ThemeToggle';
 
 export default function LoginPage() {
   const router = useRouter();
   const { accessToken, setTokens, setMe } = useAuthStore();
+  const loadCaps = useCapabilitiesStore((s) => s.load);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [totpCode, setTotpCode] = useState('');
@@ -35,6 +37,7 @@ export default function LoginPage() {
       setTokens(tokens.access_token, tokens.refresh_token);
       const me = await api<Me>('/api/v1/auth/me');
       setMe(me);
+      await loadCaps();
       router.replace('/dashboard');
     } catch (err) {
       const e = err as ApiError;

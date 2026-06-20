@@ -41,3 +41,15 @@ class TotpEnrollResponse(BaseModel):
 
 class TotpVerifyRequest(BaseModel):
     code: str
+
+
+class CapabilitiesResponse(BaseModel):
+    """Role-driven UI capability bundle consumed by the frontend
+    (see ``app/core/permissions.py::ROLE_CAPABILITIES``)."""
+
+    role: str
+    is_super: bool
+    menus: list[str]
+    actions: list[str]
+    scope: str
+    divisions: list[int]

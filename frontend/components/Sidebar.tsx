@@ -29,16 +29,16 @@ import {
   Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { hasPermission, useAuthStore } from '@/lib/auth';
+import { useAuthStore } from '@/lib/auth';
 import { API_BASE } from '@/lib/api';
+import { MENU, useCapabilitiesStore } from '@/lib/capabilities';
 
 
 type Item = {
   href: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  perm?: string;
-  super?: boolean;
+  menuId: string;
 };
 
 type Group = { title: string; items: Item[] };
@@ -47,57 +47,47 @@ const GROUPS: Group[] = [
   {
     title: 'Workspace',
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/profile', label: 'My Profile', icon: User },
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, menuId: MENU.DASHBOARD },
+      { href: '/profile', label: 'My Profile', icon: User, menuId: MENU.PROFILE },
     ],
   },
   {
     title: 'Transactions',
     items: [
-      { href: '/cases', label: 'Cases', icon: FileText, perm: 'cases:read' },
-      { href: '/approvals', label: 'Approvals Inbox', icon: Briefcase, perm: 'cases:read' },
-      { href: '/hearings', label: 'Hearings Calendar', icon: Calendar, perm: 'cases:read' },
-      {
-        href: '/cash-requests',
-        label: 'Cash Requests',
-        icon: Banknote,
-        perm: 'cases:read',
-      },
+      { href: '/cases', label: 'Cases', icon: FileText, menuId: MENU.CASES },
+      { href: '/approvals', label: 'Approvals Inbox', icon: Briefcase, menuId: MENU.APPROVALS },
+      { href: '/hearings', label: 'Hearings Calendar', icon: Calendar, menuId: MENU.HEARINGS },
+      { href: '/cash-requests', label: 'Cash Requests', icon: Banknote, menuId: MENU.CASH_REQUESTS },
     ],
   },
   {
     title: 'Insights',
     items: [
-      { href: '/reports', label: 'Reports', icon: BarChart3, perm: 'cases:read' },
-      {
-        href: '/schedules',
-        label: 'Scheduled Reports',
-        icon: CalendarClock,
-        perm: 'cases:read',
-      },
+      { href: '/reports', label: 'Reports', icon: BarChart3, menuId: MENU.REPORTS },
+      { href: '/schedules', label: 'Scheduled Reports', icon: CalendarClock, menuId: MENU.SCHEDULED_REPORTS },
     ],
   },
   {
     title: 'Masters',
     items: [
-      { href: '/masters/divisions', label: 'Divisions', icon: Building2, perm: 'masters:read' },
-      { href: '/masters/banks', label: 'Banks', icon: Landmark, perm: 'masters:read' },
-      { href: '/masters/customers', label: 'Customers', icon: UserSquare2, perm: 'masters:read' },
-      { href: '/masters/salesmen', label: 'Salesmen', icon: Users, perm: 'masters:read' },
-      { href: '/masters/lawyers', label: 'Lawyers', icon: Scale, perm: 'masters:read' },
-      { href: '/masters/case-types', label: 'Case Types', icon: Tag, perm: 'masters:read' },
+      { href: '/masters/divisions', label: 'Divisions', icon: Building2, menuId: MENU.MASTERS_DIVISIONS },
+      { href: '/masters/banks', label: 'Banks', icon: Landmark, menuId: MENU.MASTERS_BANKS },
+      { href: '/masters/customers', label: 'Customers', icon: UserSquare2, menuId: MENU.MASTERS_CUSTOMERS },
+      { href: '/masters/salesmen', label: 'Salesmen', icon: Users, menuId: MENU.MASTERS_SALESMEN },
+      { href: '/masters/lawyers', label: 'Lawyers', icon: Scale, menuId: MENU.MASTERS_LAWYERS },
+      { href: '/masters/case-types', label: 'Case Types', icon: Tag, menuId: MENU.MASTERS_CASE_TYPES },
     ],
   },
   {
     title: 'Admin',
     items: [
-      { href: '/admin/users', label: 'Users', icon: Users, perm: 'users:read' },
-      { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, perm: 'roles:read' },
-      { href: '/admin/email-log', label: 'Email Log', icon: Mail, perm: 'admin:email_log' },
-      { href: '/admin/audit-log', label: 'Audit Log', icon: ShieldCheck, perm: 'admin:audit_log' },
-      { href: '/admin/backups', label: 'Backup & Restore', icon: HardDrive, perm: 'admin:backup' },
-      { href: '/admin/settings', label: 'System Settings', icon: Settings, perm: 'admin:settings' },
-      { href: '/admin/diagnostics', label: 'Health & Diagnostics', icon: Activity, perm: 'admin:settings' },
+      { href: '/admin/users', label: 'Users', icon: Users, menuId: MENU.ADMIN_USERS },
+      { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, menuId: MENU.ADMIN_ROLES },
+      { href: '/admin/email-log', label: 'Email Log', icon: Mail, menuId: MENU.ADMIN_EMAIL_LOG },
+      { href: '/admin/audit-log', label: 'Audit Log', icon: ShieldCheck, menuId: MENU.ADMIN_AUDIT_LOG },
+      { href: '/admin/backups', label: 'Backup & Restore', icon: HardDrive, menuId: MENU.ADMIN_BACKUPS },
+      { href: '/admin/settings', label: 'System Settings', icon: Settings, menuId: MENU.ADMIN_SETTINGS },
+      { href: '/admin/diagnostics', label: 'Health & Diagnostics', icon: Activity, menuId: MENU.ADMIN_DIAGNOSTICS },
     ],
   },
 ];
@@ -107,6 +97,8 @@ export function Sidebar() {
   const router = useRouter();
   const me = useAuthStore((s) => s.me);
   const clear = useAuthStore((s) => s.clear);
+  const caps = useCapabilitiesStore((s) => s.caps);
+  const clearCaps = useCapabilitiesStore((s) => s.clear);
 
   const [logoErr, setLogoErr] = useState(false);
 
@@ -124,6 +116,7 @@ export function Sidebar() {
 
   function logout() {
     clear();
+    clearCaps();
     router.replace('/login');
   }
 
@@ -188,10 +181,11 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto overflow-x-hidden p-3">
         {GROUPS.map((g) => {
+          // Until capabilities load, fall back to is_super so the admin
+          // doesn't see an empty sidebar on first paint after refresh.
           const visible = g.items.filter((it) => {
-            if (it.super) return !!me?.is_super;
-            if (it.perm) return hasPermission(me, it.perm);
-            return true;
+            if (caps) return caps.menus.includes(it.menuId);
+            return !!me?.is_super;
           });
           if (visible.length === 0) return null;
 
