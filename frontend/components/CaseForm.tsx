@@ -109,9 +109,18 @@ export function CaseForm({ caseId }: { caseId?: number }) {
   const banks = useMasterOptions('/api/v1/masters/banks', 'name');
   const caseTypes = useMasterOptions('/api/v1/masters/case-types', 'name');
   const lawyers = useMasterOptions('/api/v1/masters/lawyers', 'name');
-  const users = useUserOptions();
 
   const [draft, setDraft] = useState<CaseDraft>(EMPTY_CASE);
+
+  // Signatory dropdowns: division-scoped for the four operational
+  // managers; cross-division for Auditor and Chairman / MD.
+  const divisionScope = draft.division_id ? Number(draft.division_id) : null;
+  const salesManagers = useUserOptions('Sales Manager', divisionScope);
+  const divisionManagers = useUserOptions('Division Manager', divisionScope);
+  const financeManagers = useUserOptions('Finance Manager', divisionScope);
+  const executiveDirectors = useUserOptions('Executive Director', divisionScope);
+  const auditors = useUserOptions('Auditor', null);
+  const chairmen = useUserOptions('Chairman / MD', null);
   const [meta, setMeta] = useState<CaseFull | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -133,6 +142,40 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       }
     })();
   }, [caseId, isEdit, reloadKey]);
+
+  // Auto-pick signatories when there's exactly one candidate — common
+  // for Auditor, Chairman / MD and small divisions where the user
+  // shouldn't have to make a meaningless choice.
+  useEffect(() => {
+    if (locked) return;
+    setDraft((d) => {
+      const next = { ...d };
+      const pairs: Array<[keyof CaseDraft, { value: number }[]]> = [
+        ['sales_manager_id', salesManagers],
+        ['division_manager_id', divisionManagers],
+        ['fm_id', financeManagers],
+        ['ed_id', executiveDirectors],
+        ['auditor_id', auditors],
+        ['chairman_id', chairmen],
+      ];
+      let changed = false;
+      for (const [k, opts] of pairs) {
+        if (next[k] == null && opts.length === 1) {
+          (next[k] as number | null) = opts[0].value;
+          changed = true;
+        }
+      }
+      return changed ? next : d;
+    });
+  }, [
+    locked,
+    salesManagers,
+    divisionManagers,
+    financeManagers,
+    executiveDirectors,
+    auditors,
+    chairmen,
+  ]);
 
   const totalCheques = useMemo(
     () => draft.cheques.reduce((s, c) => s + Number(c.amount || 0), 0),
@@ -550,7 +593,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
           <Field label="Sales Manager">
             <Select
               value={draft.sales_manager_id}
-              options={users}
+              options={salesManagers}
               allowEmpty
               onChange={(v) => up('sales_manager_id', v)}
               disabled={locked}
@@ -559,7 +602,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
           <Field label="Division Manager">
             <Select
               value={draft.division_manager_id}
-              options={users}
+              options={divisionManagers}
               allowEmpty
               onChange={(v) => up('division_manager_id', v)}
               disabled={locked}
@@ -568,7 +611,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
           <Field label="Auditor">
             <Select
               value={draft.auditor_id}
-              options={users}
+              options={auditors}
               allowEmpty
               onChange={(v) => up('auditor_id', v)}
               disabled={locked}
@@ -577,7 +620,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
           <Field label="Finance Manager">
             <Select
               value={draft.fm_id}
-              options={users}
+              options={financeManagers}
               allowEmpty
               onChange={(v) => up('fm_id', v)}
               disabled={locked}
@@ -586,7 +629,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
           <Field label="Executive Director">
             <Select
               value={draft.ed_id}
-              options={users}
+              options={executiveDirectors}
               allowEmpty
               onChange={(v) => up('ed_id', v)}
               disabled={locked}
@@ -595,7 +638,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
           <Field label="Chairman / MD">
             <Select
               value={draft.chairman_id}
-              options={users}
+              options={chairmen}
               allowEmpty
               onChange={(v) => up('chairman_id', v)}
               disabled={locked}
@@ -699,15 +742,30 @@ function toDraft(c: CaseFull): CaseDraft {
   };
 }
 
-function useUserOptions(): { value: number; label: string }[] {
+/** Role-scoped signatory dropdown options.
+ *
+ * - For division-bound roles (Sales Manager, Division Manager, Finance
+ *   Manager, Executive Director) we filter by the case's selected
+ *   division so users only see candidates from their own division.
+ * - For cross-division roles (Auditor, Chairman / MD) the backend
+ *   ignores the division filter so they always show up.
+ */
+function useUserOptions(
+  role: string,
+  divisionId: number | null,
+): { value: number; label: string }[] {
   const [opts, setOpts] = useState<{ value: number; label: string }[]>([]);
   useEffect(() => {
-    api<Array<{ id: number; full_name: string; email: string }>>('/api/v1/users')
+    const params = new URLSearchParams({ role });
+    if (divisionId) params.set('division_id', String(divisionId));
+    api<Array<{ id: number; full_name: string; email: string }>>(
+      `/api/v1/users/options?${params.toString()}`,
+    )
       .then((rows) =>
         setOpts(rows.map((r) => ({ value: r.id, label: `${r.full_name} (${r.email})` }))),
       )
       .catch(() => setOpts([]));
-  }, []);
+  }, [role, divisionId]);
   return opts;
 }
 

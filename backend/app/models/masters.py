@@ -75,6 +75,25 @@ class Lawyer(Base, TimestampMixin):
     email: Mapped[str] = mapped_column(String(255), default="")
     phone: Mapped[str] = mapped_column(String(50), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # "All Companies" flag — when true the lawyer is available on cases
+    # across every division and the link rows are ignored. When false
+    # only the divisions in ``divisions`` apply.
+    is_all_divisions: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+
+    divisions: Mapped[list["Division"]] = relationship(
+        secondary="lawyer_division_map", lazy="selectin"
+    )
+
+
+class LawyerDivisionMap(Base):
+    __tablename__ = "lawyer_division_map"
+
+    lawyer_id: Mapped[int] = mapped_column(
+        ForeignKey("lawyers.id", ondelete="CASCADE"), primary_key=True
+    )
+    division_id: Mapped[int] = mapped_column(
+        ForeignKey("divisions.id", ondelete="CASCADE"), primary_key=True
+    )
 
 
 class CaseType(Base, TimestampMixin):

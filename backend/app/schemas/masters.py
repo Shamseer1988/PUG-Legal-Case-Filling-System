@@ -124,10 +124,11 @@ class LawyerBase(BaseModel):
     email: str = ""
     phone: str = ""
     is_active: bool = True
+    is_all_divisions: bool = False
 
 
 class LawyerCreate(LawyerBase):
-    pass
+    division_ids: list[int] = Field(default_factory=list)
 
 
 class LawyerUpdate(BaseModel):
@@ -136,11 +137,14 @@ class LawyerUpdate(BaseModel):
     email: str | None = None
     phone: str | None = None
     is_active: bool | None = None
+    is_all_divisions: bool | None = None
+    division_ids: list[int] | None = None
 
 
 class LawyerRead(LawyerBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+    division_ids: list[int] = Field(default_factory=list)
 
 
 # ---------- Case Type ----------

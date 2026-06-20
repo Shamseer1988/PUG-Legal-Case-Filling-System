@@ -6,7 +6,15 @@ from app.models.backup import BackupJob, RestoreJob
 from app.models.case import Case, CaseAttachment, CaseNoSequence, CaseStatusUpdate, Cheque
 from app.models.closure import CaseClosure
 from app.models.court import CashRequest, CourtFiling, Hearing
-from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
+from app.models.masters import (
+    Bank,
+    CaseType,
+    Customer,
+    Division,
+    Lawyer,
+    LawyerDivisionMap,
+    Salesman,
+)
 from app.models.notification import EmailLog, Notification
 from app.models.scheduled_report import ScheduledReport, ScheduledReportRun
 from app.models.settings import SettingsKV
@@ -22,6 +30,7 @@ __all__ = [
     "Salesman",
     "Customer",
     "Lawyer",
+    "LawyerDivisionMap",
     "CaseType",
     "Case",
     "Cheque",

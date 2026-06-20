@@ -1,9 +1,10 @@
 """User CRUD endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app.core.deps import require_permission
+from app.core.deps import get_current_user, require_permission
 from app.core.permissions import USERS_READ, USERS_WRITE
 from app.core.security import hash_password
 from app.db.session import get_db
@@ -12,6 +13,57 @@ from app.schemas.user import UserCreate, UserRead, UserUpdate
 from app.services import audit_service
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+
+# Roles that don't need to be division-scoped on the case form — they
+# represent group-wide approvers / sign-offs.
+_CROSS_DIVISION_ROLES = {"Auditor", "Chairman / MD", "Admin"}
+
+
+class UserOption(BaseModel):
+    id: int
+    full_name: str
+    email: str
+    role_name: str
+    division_ids: list[int]
+
+
+@router.get("/options", response_model=list[UserOption])
+def user_options(
+    role: str | None = None,
+    division_id: int | None = None,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+) -> list[UserOption]:
+    """Dropdown options for the case form's signatory selectors.
+
+    ``role`` filters by role name (Sales Manager / Division Manager /
+    Finance Manager / Executive Director / Auditor / Chairman / MD).
+
+    ``division_id`` filters out users who don't belong to that
+    division — but is ignored for the cross-division approver roles
+    (Auditor and Chairman / MD), who sign across every division.
+    """
+    q = db.query(User).join(Role, User.role_id == Role.id).filter(User.is_active.is_(True))
+    if role:
+        q = q.filter(Role.name == role)
+    rows = q.order_by(User.full_name).all()
+    apply_division_filter = division_id is not None and role not in _CROSS_DIVISION_ROLES
+    out: list[UserOption] = []
+    for u in rows:
+        div_ids = [d.id for d in u.divisions]
+        if apply_division_filter and division_id not in div_ids:
+            continue
+        out.append(
+            UserOption(
+                id=u.id,
+                full_name=u.full_name,
+                email=u.email,
+                role_name=u.role.name if u.role else "",
+                division_ids=div_ids,
+            )
+        )
+    return out
 
 
 def _to_read(user: User) -> UserRead:

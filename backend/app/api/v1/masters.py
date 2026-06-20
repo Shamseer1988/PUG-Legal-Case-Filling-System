@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 from app.core.deps import require_permission
 from app.core.permissions import MASTERS_READ, MASTERS_WRITE
 from app.db.session import get_db
-from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
+from app.models.masters import (
+    Bank,
+    CaseType,
+    Customer,
+    Division,
+    Lawyer,
+    LawyerDivisionMap,
+    Salesman,
+)
 from app.models.user import User
 from app.schemas.masters import (
     BankCreate,
@@ -178,16 +186,112 @@ _register(
     order_by=Customer.code,
     unique_field="code",
 )
-_register(
-    router,
-    path="/lawyers",
-    model=Lawyer,
-    read_schema=LawyerRead,
-    create_schema=LawyerCreate,
-    update_schema=LawyerUpdate,
-    order_by=Lawyer.name,
-    unique_field=None,
-)
+# ---------- Lawyers (custom: division M2M + "All Companies" flag) ----------
+def _lawyer_to_read(obj: Lawyer) -> LawyerRead:
+    return LawyerRead(
+        id=obj.id,
+        name=obj.name,
+        firm=obj.firm,
+        email=obj.email,
+        phone=obj.phone,
+        is_active=obj.is_active,
+        is_all_divisions=obj.is_all_divisions,
+        division_ids=[d.id for d in obj.divisions],
+    )
+
+
+def _set_lawyer_divisions(db: Session, lawyer: Lawyer, division_ids: list[int]) -> None:
+    db.query(LawyerDivisionMap).filter(LawyerDivisionMap.lawyer_id == lawyer.id).delete()
+    for did in division_ids or []:
+        db.add(LawyerDivisionMap(lawyer_id=lawyer.id, division_id=did))
+
+
+@router.get("/lawyers", response_model=list[LawyerRead])
+def list_lawyers(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(MASTERS_READ)),
+) -> list[LawyerRead]:
+    return [_lawyer_to_read(x) for x in db.query(Lawyer).order_by(Lawyer.name).all()]
+
+
+@router.post("/lawyers", response_model=LawyerRead, status_code=status.HTTP_201_CREATED)
+def create_lawyer(
+    payload: LawyerCreate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(MASTERS_WRITE)),
+) -> LawyerRead:
+    data = payload.model_dump()
+    division_ids = data.pop("division_ids", [])
+    obj = Lawyer(**data)
+    db.add(obj)
+    db.flush()
+    if not obj.is_all_divisions:
+        _set_lawyer_divisions(db, obj, division_ids)
+    audit_service.audit_create(
+        db,
+        "Lawyer",
+        obj.id,
+        f"Created Lawyer: {obj.name}",
+        {**audit_service.snapshot(obj), "division_ids": division_ids},
+    )
+    db.commit()
+    db.refresh(obj)
+    return _lawyer_to_read(obj)
+
+
+@router.get("/lawyers/{item_id}", response_model=LawyerRead)
+def get_lawyer(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(MASTERS_READ)),
+) -> LawyerRead:
+    obj = db.get(Lawyer, item_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Not found")
+    return _lawyer_to_read(obj)
+
+
+@router.patch("/lawyers/{item_id}", response_model=LawyerRead)
+def update_lawyer(
+    item_id: int,
+    payload: LawyerUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(MASTERS_WRITE)),
+) -> LawyerRead:
+    obj = db.get(Lawyer, item_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Not found")
+    before = {**audit_service.snapshot(obj), "division_ids": [d.id for d in obj.divisions]}
+    data = payload.model_dump(exclude_unset=True)
+    division_ids = data.pop("division_ids", None)
+    for k, v in data.items():
+        setattr(obj, k, v)
+    if obj.is_all_divisions:
+        # "All Companies" wins — drop any per-division mappings so we
+        # don't leak them back the next time the flag is unset.
+        _set_lawyer_divisions(db, obj, [])
+    elif division_ids is not None:
+        _set_lawyer_divisions(db, obj, division_ids)
+    db.flush()
+    after = {**audit_service.snapshot(obj), "division_ids": [d.id for d in obj.divisions]}
+    audit_service.audit_update(db, "Lawyer", obj.id, f"Updated Lawyer #{obj.id}", before, after)
+    db.commit()
+    db.refresh(obj)
+    return _lawyer_to_read(obj)
+
+
+@router.delete("/lawyers/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_lawyer(
+    item_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(MASTERS_WRITE)),
+) -> None:
+    obj = db.get(Lawyer, item_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Not found")
+    audit_service.audit_delete(db, "Lawyer", obj.id, f"Deleted Lawyer: {obj.name}", audit_service.snapshot(obj))
+    db.delete(obj)
+    db.commit()
 _register(
     router,
     path="/case-types",

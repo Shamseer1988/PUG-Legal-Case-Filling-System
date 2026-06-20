@@ -14,7 +14,19 @@ export type CrudField =
       required?: boolean;
       allowEmpty?: boolean;
     }
-  | { name: string; label: string; type: 'checkbox' };
+  | { name: string; label: string; type: 'checkbox' }
+  | {
+      // Multi-select rendered as a checkbox grid plus an "All Companies"
+      // master checkbox that maps to ``allField`` on the record. When
+      // ``allField`` is true, individual selections are cleared and the
+      // grid is disabled.
+      name: string;
+      label: string;
+      type: 'divisions';
+      options: { value: number; label: string }[];
+      allField: string;
+      allLabel?: string;
+    };
 
 type Row = Record<string, unknown> & { id: number };
 
@@ -134,9 +146,15 @@ export function CrudPage({
             {editing ? `Edit ${title.slice(0, -1)} #${editing.id}` : `New ${title.slice(0, -1)}`}
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {fields.map((f) => (
-              <FieldInput key={f.name} field={f} draft={draft} setDraft={setDraft} />
-            ))}
+            {fields.map((f) => {
+              // Divisions picker spans the full grid for readability
+              const wide = f.type === 'divisions';
+              return (
+                <div key={f.name} className={wide ? 'md:col-span-2' : undefined}>
+                  <FieldInput field={f} draft={draft} setDraft={setDraft} />
+                </div>
+              );
+            })}
           </div>
           <div className="mt-4 flex gap-2">
             <button
@@ -237,6 +255,67 @@ function FieldInput({
         />
         {field.label}
       </label>
+    );
+  }
+
+  if (field.type === 'divisions') {
+    const { name: fieldName, allField, options, allLabel } = field;
+    const selected: number[] = Array.isArray(value)
+      ? (value as number[])
+      : [];
+    const allChecked = Boolean(draft[allField]);
+    function toggleOne(id: number) {
+      if (allChecked) return;
+      const next = selected.includes(id)
+        ? selected.filter((x) => x !== id)
+        : [...selected, id];
+      setDraft({ ...draft, [fieldName]: next });
+    }
+    function toggleAll(on: boolean) {
+      // Flipping "All Companies" wipes the individual selections so
+      // there's no stale state to reconcile when the flag flips back.
+      setDraft({ ...draft, [allField]: on, [fieldName]: [] });
+    }
+    return (
+      <fieldset className="rounded-md border border-[rgb(var(--color-border))] p-3">
+        <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+          {field.label}
+        </legend>
+        <label className="mb-2 flex items-center gap-2 text-sm font-semibold">
+          <input
+            type="checkbox"
+            checked={allChecked}
+            onChange={(e) => toggleAll(e.target.checked)}
+            className="h-4 w-4"
+          />
+          {allLabel ?? 'All Companies'}
+        </label>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          {options.map((o) => {
+            const checked = allChecked || selected.includes(o.value);
+            return (
+              <label
+                key={o.value}
+                className={`flex items-center gap-2 text-sm ${
+                  allChecked ? 'opacity-60' : ''
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  disabled={allChecked}
+                  checked={checked}
+                  onChange={() => toggleOne(o.value)}
+                  className="h-4 w-4"
+                />
+                {o.label}
+              </label>
+            );
+          })}
+          {options.length === 0 && (
+            <span className="text-xs text-[rgb(var(--color-muted))]">No divisions found.</span>
+          )}
+        </div>
+      </fieldset>
     );
   }
 
