@@ -1,6 +1,7 @@
 'use client';
 
 import { Plus, Trash2, Save, Send, Printer, Paperclip, X } from 'lucide-react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
@@ -641,14 +642,12 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             </>
           )}
           {isEdit && meta && (
-            <a
-              href={`${API_BASE}/api/v1/cases/${meta.id}/print`}
-              target="_blank"
-              rel="noreferrer"
+            <Link
+              href={`/cases/${meta.id}/print`}
               className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-4 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
             >
               <Printer className="h-4 w-4" /> Print
-            </a>
+            </Link>
           )}
           {locked && (
             <div className="text-xs text-[rgb(var(--color-muted))]">
