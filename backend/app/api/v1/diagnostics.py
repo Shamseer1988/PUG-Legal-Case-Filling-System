@@ -41,9 +41,46 @@ def diagnostics(
         from app.core.config import settings
         import redis
 
-        client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=2, protocol=2)
-        client.ping()
-        out["checks"].append({"name": "Redis", "ok": True, "detail": settings.redis_url})
+        # Force RESP2 + skip HELLO so the check works against older Redis
+        # builds (e.g. the redis-windows community port) which would
+        # otherwise return "unknown command 'HELLO'".
+        try:
+            client = redis.Redis.from_url(
+                settings.redis_url,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+                protocol=2,
+            )
+        except TypeError:
+            # Older redis-py without `protocol` kwarg
+            client = redis.Redis.from_url(
+                settings.redis_url,
+                socket_connect_timeout=2,
+                socket_timeout=2,
+            )
+
+        try:
+            client.ping()
+            out["checks"].append(
+                {"name": "Redis", "ok": True, "detail": settings.redis_url}
+            )
+        except redis.exceptions.ResponseError as e:
+            msg = str(e).lower()
+            if "unknown command" in msg and "hello" in msg:
+                # Server is up but pre-Redis-6 - tolerate it.
+                out["checks"].append(
+                    {
+                        "name": "Redis",
+                        "ok": True,
+                        "detail": (
+                            f"{settings.redis_url} (older Redis; consider upgrading to 6+)"
+                        ),
+                    }
+                )
+            else:
+                out["checks"].append(
+                    {"name": "Redis", "ok": False, "detail": str(e)[:200]}
+                )
     except Exception as e:
         out["checks"].append({"name": "Redis", "ok": False, "detail": str(e)[:200]})
 
