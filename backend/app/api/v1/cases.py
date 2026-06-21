@@ -40,6 +40,7 @@ from app.services import (
     audit_service,
     case_service,
     closure_service,
+    notification_service,
     render,
     storage,
     workflow_service,
@@ -657,6 +658,10 @@ def upload_signed_form(
         commit=True,
     )
     db.refresh(new_att)
+    # Surface the upload to the Accountant + Auditor so they can
+    # verify the signed copy matches the approved details.
+    notification_service.on_signed_form_uploaded(db, case, user)
+    db.commit()
     return AttachmentRead.model_validate(new_att)
 
 
@@ -729,6 +734,9 @@ def close_case(
     except closure_service.ClosureError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     closed_by = db.get(User, closure.closed_by_id)
+    # Notify the author + Chairman + FM that the case is now Closed.
+    notification_service.on_case_closed(db, case, user, closure.closure_type)
+    db.commit()
     return ClosureRead(
         **{c: getattr(closure, c) for c in ClosureRead.model_fields if hasattr(closure, c)},
         closed_by_name=closed_by.full_name if closed_by else "",

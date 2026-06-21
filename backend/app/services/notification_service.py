@@ -6,6 +6,7 @@ rather than crashing the calling workflow.
 
 from __future__ import annotations
 
+from loguru import logger
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -49,7 +50,13 @@ def _emit(
         )
     )
 
-    if user.email:
+    if not user.email:
+        return
+
+    # Don't let an email failure (bad SMTP host, slow auth, etc.)
+    # take down the workflow transition that triggered it. The
+    # transition has already committed; the email is best-effort.
+    try:
         email_service.queue_email(
             db,
             to_emails=[user.email],
@@ -67,6 +74,8 @@ def _emit(
             related_case_id=related_case_id,
             related_user_id=user.id,
         )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("queue_email failed for {} ({}): {}", user.email, event, exc)
 
 
 def _case_facts(case: Case) -> list[tuple[str, str]]:
@@ -180,20 +189,91 @@ def on_case_resubmitted(db: Session, case: Case, actor: User) -> None:
     )
 
 
-# ===================== Court / cash events =====================
+# ===================== Lawyer / Court events =====================
+def on_lawyer_approved(db: Session, case: Case, actor: User, comment: str) -> None:
+    """Phase 20: Lawyer explicitly signs off after filing.
+
+    Pings both the case author (so they know the matter is now
+    cleared for closure) and the Chairman who gave final approval,
+    so the chain of custody is visible end-to-end.
+    """
+    targets = {case.created_by_id, case.chairman_id}
+    for uid in targets:
+        if uid:
+            _emit(
+                db,
+                user_id=uid,
+                title=f"Lawyer approval recorded: {case.case_no}",
+                body=f"{actor.full_name} signed off the filing.",
+                link=_case_url(case.id),
+                event="case.lawyer_approved",
+                related_case_id=case.id,
+                lines=(
+                    [comment] if comment else []
+                )
+                + [f"{actor.full_name} confirmed the filing."],
+                facts=_case_facts(case),
+            )
+
+
 def on_court_filed(db: Session, case: Case, actor: User) -> None:
-    if not case.fm_id:
-        return
-    _emit(
-        db,
-        user_id=case.fm_id,
-        title=f"Case filed in court: {case.case_no}",
-        body=f"Filed by {actor.full_name}.",
-        link=_case_url(case.id),
-        event="case.court_filed",
-        related_case_id=case.id,
-        facts=_case_facts(case),
-    )
+    """Notify both the Finance Manager and the case author once a
+    court filing is recorded - the FM needs to release legal cash
+    against the filing reference, the Accountant needs to update
+    their tracker."""
+    targets = {case.fm_id, case.created_by_id}
+    for uid in targets:
+        if uid:
+            _emit(
+                db,
+                user_id=uid,
+                title=f"Case filed in court: {case.case_no}",
+                body=f"Filed by {actor.full_name}.",
+                link=_case_url(case.id),
+                event="case.court_filed",
+                related_case_id=case.id,
+                facts=_case_facts(case),
+            )
+
+
+def on_signed_form_uploaded(db: Session, case: Case, actor: User) -> None:
+    """Phase 24: signed copy of the printed form is now on file.
+
+    Notify the case author (Accountant) and any Auditor mapped to
+    the case so they can verify the signed copy matches the
+    approved details before closure runs."""
+    targets = {case.created_by_id, case.auditor_id}
+    for uid in targets:
+        if uid:
+            _emit(
+                db,
+                user_id=uid,
+                title=f"Signed form uploaded: {case.case_no}",
+                body=f"{actor.full_name} attached the signed copy of the case form.",
+                link=_case_url(case.id),
+                event="case.signed_form_uploaded",
+                related_case_id=case.id,
+                facts=_case_facts(case),
+            )
+
+
+def on_case_closed(db: Session, case: Case, actor: User, closure_type: str) -> None:
+    """Notify case author + Chairman + FM that closure is recorded."""
+    targets = {case.created_by_id, case.chairman_id, case.fm_id}
+    pretty_type = closure_type.replace("_", " ").title()
+    for uid in targets:
+        if uid:
+            _emit(
+                db,
+                user_id=uid,
+                title=f"Case closed: {case.case_no}",
+                body=f"Closed by {actor.full_name} via {pretty_type}.",
+                link=_case_url(case.id),
+                event="case.closed",
+                related_case_id=case.id,
+                facts=_case_facts(case)
+                + [("Closure Type", pretty_type)],
+            )
 
 
 def on_cash_request_created(db: Session, cash: CashRequest, case: Case) -> None:

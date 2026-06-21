@@ -374,6 +374,10 @@ def lawyer_approve(db: Session, case: Case, user: User, comment: str) -> Case:
     )
     db.commit()
     db.refresh(case)
+    from app.services import notification_service
+
+    notification_service.on_lawyer_approved(db, case, user, comment)
+    db.commit()
     return case
 
 
