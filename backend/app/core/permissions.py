@@ -28,6 +28,7 @@ CASES_APPROVE_AUDIT = "cases:approve:audit"
 CASES_APPROVE_FM = "cases:approve:fm"
 CASES_APPROVE_ED = "cases:approve:ed"
 CASES_APPROVE_FINAL = "cases:approve:final"
+CASES_LAWYER_APPROVE = "cases:approve:lawyer"
 CASES_FILE = "cases:file"
 HEARINGS_WRITE = "hearings:write"
 EXPENSES_REQUEST = "expenses:request"
@@ -84,6 +85,7 @@ ROLE_PRESETS: dict[str, list[str]] = {
     "Lawyer": [
         CASES_READ,
         CASES_FILE,
+        CASES_LAWYER_APPROVE,
         HEARINGS_WRITE,
         EXPENSES_REQUEST,
         MASTERS_READ,
@@ -147,7 +149,7 @@ ACTION_CASE_APPROVE_AUDIT = "case.approve.audit"
 ACTION_CASE_APPROVE_FM = "case.approve.fm"
 ACTION_CASE_APPROVE_ED = "case.approve.ed"
 ACTION_CASE_APPROVE_FINAL = "case.approve.final"
-ACTION_CASE_LAWYER_APPROVE = "case.lawyer.approve"
+ACTION_CASE_LAWYER_APPROVE = "case.lawyer.approve"  # explicit lawyer sign-off after filing
 ACTION_CASE_FILE = "case.file"
 ACTION_CASE_CLOSE = "case.close"
 ACTION_CASE_CREATE = "case.create"

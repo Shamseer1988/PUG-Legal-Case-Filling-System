@@ -6,7 +6,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class TransitionRequest(BaseModel):
-    action: str = Field(pattern="^(approve|reject|request_clarification|resubmit|comment)$")
+    action: str = Field(
+        pattern="^(approve|reject|request_clarification|resubmit|lawyer_approve|comment)$"
+    )
     comment: str = ""
     # IDs of pre-uploaded CaseTransitionAttachment rows to bind into
     # the new CaseStatusUpdate row created by this transition.

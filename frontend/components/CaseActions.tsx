@@ -1,8 +1,9 @@
 'use client';
 
-import { Check, X, AlertTriangle, Paperclip, Send, Upload, Trash2 } from 'lucide-react';
+import { Check, X, AlertTriangle, Gavel, Paperclip, Send, Upload, Trash2 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
+import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 import {
   deletePendingTransitionAttachment,
   formatBytes,
@@ -10,7 +11,7 @@ import {
   type TransitionAttachment,
 } from '@/lib/transitionAttachments';
 
-type Action = 'approve' | 'reject' | 'request_clarification' | 'resubmit';
+type Action = 'approve' | 'reject' | 'request_clarification' | 'resubmit' | 'lawyer_approve';
 
 type Props = {
   caseId: number;
@@ -28,21 +29,26 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
   const [pending, setPending] = useState<TransitionAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const caps = useCapabilitiesStore((s) => s.caps);
   const isApprovalStage = ![
     'Accountant',
     'Lawyer',
     'Closed',
   ].includes(currentStage);
   const isClarifyState = status === 'Clarification Requested';
-  const isFinal = status === 'Approved' || status === 'Rejected';
+  // Lawyer Approval is only offered once the Lawyer has filed the
+  // case (status=Filed at stage=Lawyer) and the user has the
+  // dedicated capability.
+  const showLawyerApprove =
+    currentStage === 'Lawyer' &&
+    status === 'Filed' &&
+    canDoAction(caps, ACTION.CASE_LAWYER_APPROVE);
+  const isFinal = status === 'Rejected' || status === 'Closed';
 
   if (isFinal) {
     return (
       <div className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-4 text-sm text-[rgb(var(--color-muted))]">
         Case is <strong>{status}</strong>. No further approval actions.
-        {status === 'Approved' && currentStage === 'Lawyer' && (
-          <> Court filing is handled in the Lawyer panel below.</>
-        )}
       </div>
     );
   }
@@ -146,7 +152,12 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
               <Send className="h-4 w-4" /> Resubmit
             </Btn>
           )}
-          {!isApprovalStage && !isClarifyState && (
+          {showLawyerApprove && (
+            <Btn variant="green" onClick={() => setOpen('lawyer_approve')}>
+              <Gavel className="h-4 w-4" /> Approve (Lawyer)
+            </Btn>
+          )}
+          {!isApprovalStage && !isClarifyState && !showLawyerApprove && (
             <div className="text-xs text-[rgb(var(--color-muted))]">
               No approval action available at this stage.
             </div>
@@ -164,7 +175,9 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
                   ? 'Rejection reason (required)'
                   : open === 'request_clarification'
                     ? 'What clarification do you need? (required)'
-                    : 'Notes (optional)'}
+                    : open === 'lawyer_approve'
+                      ? 'Lawyer approval note (optional)'
+                      : 'Notes (optional)'}
             </span>
             <textarea
               rows={3}
@@ -254,6 +267,8 @@ function labelFor(a: Action): string {
       return 'Clarification';
     case 'resubmit':
       return 'Resubmit';
+    case 'lawyer_approve':
+      return 'Lawyer Approval';
   }
 }
 

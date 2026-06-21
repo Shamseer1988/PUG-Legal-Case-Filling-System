@@ -570,6 +570,14 @@ def case_cash_flow(db: Session, user: User, params: dict[str, Any]) -> dict[str,
             "status": case.status,
             "legal_filing_amount": str(case.legal_filing_amount or 0),
             "attachments_count": len(attachments),
+            # Phase 20: surface closure metadata so the report UI can
+            # show "Closed" pill + settlement details without a second
+            # round-trip to the closure endpoint.
+            "is_closed": closure is not None,
+            "closure_type": closure.closure_type if closure else "",
+            "closed_at": closure.closed_at if closure else None,
+            "closed_by": actors.get(closure.closed_by_id, "") if closure else "",
+            "settled_amount": str(closure.settled_amount) if closure else "0",
         },
         "attachments": attachments,
     }

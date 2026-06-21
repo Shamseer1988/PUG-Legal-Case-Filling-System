@@ -25,6 +25,7 @@ CASE_STATUS_CLARIFICATION = "Clarification Requested"
 CASE_STATUS_APPROVED = "Approved"
 CASE_STATUS_REJECTED = "Rejected"
 CASE_STATUS_FILED = "Filed"  # set after court filing (Phase 4)
+CASE_STATUS_LAWYER_APPROVED = "Lawyer Approved"  # Phase 20 - explicit lawyer sign-off
 CASE_STATUS_CLOSED = "Closed"
 
 STAGE_ACCOUNTANT = "Accountant"
@@ -43,6 +44,7 @@ ACTION_APPROVE = "approve"
 ACTION_REJECT = "reject"
 ACTION_REQUEST_CLARIFICATION = "request_clarification"
 ACTION_RESUBMIT = "resubmit"
+ACTION_LAWYER_APPROVE = "lawyer_approve"
 ACTION_COMMENT = "comment"
 
 

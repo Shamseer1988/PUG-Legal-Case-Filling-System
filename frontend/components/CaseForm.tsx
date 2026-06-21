@@ -325,7 +325,9 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             onDone={() => setReloadKey((k) => k + 1)}
           />
           {/* Phase 4 panels - visible once the case reaches Approved */}
-          {(meta.status === 'Approved' || meta.status === 'Filed') && (
+          {(meta.status === 'Approved' ||
+            meta.status === 'Filed' ||
+            meta.status === 'Lawyer Approved') && (
             <>
               <CourtFilingPanel
                 caseId={meta.id}
@@ -336,7 +338,10 @@ export function CaseForm({ caseId }: { caseId?: number }) {
               <CashRequestsPanel caseId={meta.id} status={meta.status} />
             </>
           )}
-          {(meta.status === 'Approved' || meta.status === 'Filed' || meta.status === 'Closed') && (
+          {(meta.status === 'Approved' ||
+            meta.status === 'Filed' ||
+            meta.status === 'Lawyer Approved' ||
+            meta.status === 'Closed') && (
             <ClosurePanel
               caseId={meta.id}
               status={meta.status}

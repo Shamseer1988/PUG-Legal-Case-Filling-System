@@ -13,6 +13,7 @@ from app.core.workflow import (
 )
 from app.models.case import (
     ACTION_APPROVE,
+    ACTION_LAWYER_APPROVE,
     ACTION_REJECT,
     ACTION_REQUEST_CLARIFICATION,
     ACTION_RESUBMIT,
@@ -20,7 +21,9 @@ from app.models.case import (
     CASE_STATUS_APPROVED,
     CASE_STATUS_CLARIFICATION,
     CASE_STATUS_DRAFT,
+    CASE_STATUS_FILED,
     CASE_STATUS_IN_REVIEW,
+    CASE_STATUS_LAWYER_APPROVED,
     CASE_STATUS_REJECTED,
     CASE_STATUS_SUBMITTED,
     STAGE_ACCOUNTANT,
@@ -327,21 +330,71 @@ def resubmit(db: Session, case: Case, user: User, comment: str) -> Case:
     return case
 
 
+def lawyer_approve(db: Session, case: Case, user: User, comment: str) -> Case:
+    """Explicit Lawyer sign-off after the case is Filed.
+
+    Closes the gap that previously left the Lawyer panel saying
+    "No approval action available" once the case reached the
+    Filed state — the Lawyer now confirms the filing before
+    closure becomes the next available action.
+    """
+    if case.status != CASE_STATUS_FILED:
+        raise WorkflowError(
+            f"Lawyer approval is only available after court filing; status = '{case.status}'"
+        )
+    if case.current_stage != STAGE_LAWYER:
+        raise WorkflowError(
+            f"Lawyer approval is only available at the Lawyer stage; current = '{case.current_stage}'"
+        )
+    from_status, from_stage = case.status, case.current_stage
+    case.status = CASE_STATUS_LAWYER_APPROVED
+    # Stay on the Lawyer stage so closure can pick up from here.
+    _set_stage(case, STAGE_LAWYER, None)
+    _log(
+        db,
+        case,
+        user,
+        ACTION_LAWYER_APPROVE,
+        from_status=from_status,
+        to_status=case.status,
+        from_stage=from_stage,
+        to_stage=case.current_stage,
+        comment=comment or "Lawyer approved.",
+    )
+    _audit_transition(
+        db,
+        case,
+        user,
+        action=ACTION_LAWYER_APPROVE,
+        from_status=from_status,
+        to_status=case.status,
+        from_stage=from_stage,
+        to_stage=case.current_stage,
+        comment=comment or "Lawyer approved.",
+    )
+    db.commit()
+    db.refresh(case)
+    return case
+
+
 # ---------------- access helpers ----------------
 def can_act(user: User, case: Case) -> bool:
     """Whether the given user can take an action at the case's current stage."""
     if user.is_super:
         return True
+    perms = user.role.permissions if user.role else []
     cfg = get_stage(case.current_stage)
     if not cfg:
         # Accountant clarification: any user with cases:create on their own case
         if case.current_stage == STAGE_ACCOUNTANT and case.status == CASE_STATUS_CLARIFICATION:
-            perms = user.role.permissions if user.role else []
             return has_permission(perms, "cases:create") and (
                 case.created_by_id == user.id or case.division_id in {d.id for d in user.divisions}
             )
+        # Lawyer stage with status=Filed: an explicit lawyer-approve
+        # action becomes available to anyone with cases:approve:lawyer.
+        if case.current_stage == STAGE_LAWYER and case.status == CASE_STATUS_FILED:
+            return has_permission(perms, "cases:approve:lawyer")
         return False
-    perms = user.role.permissions if user.role else []
     if not has_permission(perms, cfg.permission):
         return False
     # If user has division scope and case is outside it, deny (unless wildcard)
@@ -411,6 +464,7 @@ __all__ = [
     "reject",
     "request_clarification",
     "resubmit",
+    "lawyer_approve",
     "can_act",
     "inbox_for",
     "is_overdue",

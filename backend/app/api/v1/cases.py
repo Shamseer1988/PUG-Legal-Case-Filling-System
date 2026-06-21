@@ -184,6 +184,8 @@ def transition_case(
             case = workflow_service.request_clarification(db, case, user, payload.comment)
         elif payload.action == "resubmit":
             case = workflow_service.resubmit(db, case, user, payload.comment)
+        elif payload.action == "lawyer_approve":
+            case = workflow_service.lawyer_approve(db, case, user, payload.comment)
         else:
             raise HTTPException(status_code=400, detail=f"Unknown action: {payload.action}")
     except workflow_service.WorkflowError as e:

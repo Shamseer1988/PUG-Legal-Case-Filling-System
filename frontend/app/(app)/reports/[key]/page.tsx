@@ -43,6 +43,11 @@ type ReportData = {
     status: string;
     legal_filing_amount: string;
     attachments_count: number;
+    is_closed?: boolean;
+    closure_type?: string;
+    closed_at?: string | null;
+    closed_by?: string;
+    settled_amount?: string;
   } | null;
   attachments?: { id: number; filename: string; category: string; size_bytes: number }[];
 };
@@ -389,7 +394,14 @@ function CaseFlowHeader({
     <section className="rounded-xl border border-pug-gold-500/40 bg-pug-gold-500/5 p-4 shadow-soft">
       <div className="flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
-          <div className="font-mono text-sm font-semibold">{caseInfo.case_no}</div>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-sm font-semibold">
+            {caseInfo.case_no}
+            {caseInfo.is_closed && (
+              <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">
+                Closed &middot; {closureLabel(caseInfo.closure_type)}
+              </span>
+            )}
+          </div>
           <div className="text-xs text-[rgb(var(--color-muted))]">
             Status: <strong>{caseInfo.status}</strong> &middot; Legal Amount:{' '}
             {Number(caseInfo.legal_filing_amount).toLocaleString(undefined, {
@@ -398,6 +410,21 @@ function CaseFlowHeader({
             })}{' '}
             &middot; {caseInfo.attachments_count} attachment(s)
           </div>
+          {caseInfo.is_closed && (
+            <div className="mt-1 text-[11px] text-[rgb(var(--color-muted))]">
+              Settled{' '}
+              <strong>
+                {Number(caseInfo.settled_amount ?? 0).toLocaleString(undefined, {
+                  minimumFractionDigits: 2,
+                  maximumFractionDigits: 2,
+                })}
+              </strong>{' '}
+              by {caseInfo.closed_by || '-'} on{' '}
+              {caseInfo.closed_at
+                ? new Date(caseInfo.closed_at).toLocaleDateString()
+                : '-'}
+            </div>
+          )}
         </div>
         {attachments.length > 0 && (
           <button
@@ -411,4 +438,23 @@ function CaseFlowHeader({
       </div>
     </section>
   );
+}
+
+function closureLabel(type: string | undefined): string {
+  switch (type) {
+    case 'court_cheque':
+      return 'Court Cheque';
+    case 'online_transfer':
+      return 'Online Transfer';
+    case 'cash_received':
+      return 'Cash Received';
+    case 'settlement':
+      return 'Settlement';
+    case 'writeoff':
+      return 'Write-Off';
+    case 'other':
+      return 'Other';
+    default:
+      return type || 'Closed';
+  }
 }

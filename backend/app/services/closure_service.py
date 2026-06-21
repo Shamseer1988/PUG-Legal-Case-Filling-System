@@ -10,6 +10,7 @@ from app.models.case import (
     CASE_STATUS_APPROVED,
     CASE_STATUS_CLOSED,
     CASE_STATUS_FILED,
+    CASE_STATUS_LAWYER_APPROVED,
     STAGE_CLOSED,
     Case,
     CaseStatusUpdate,
@@ -31,7 +32,11 @@ class ClosureError(ValueError):
     """Raised when a case cannot be closed."""
 
 
-CLOSABLE_STATUSES = {CASE_STATUS_APPROVED, CASE_STATUS_FILED}
+CLOSABLE_STATUSES = {
+    CASE_STATUS_APPROVED,
+    CASE_STATUS_FILED,
+    CASE_STATUS_LAWYER_APPROVED,
+}
 
 
 def _utcnow() -> datetime:
@@ -64,7 +69,8 @@ def close_case(
 ) -> CaseClosure:
     if case.status not in CLOSABLE_STATUSES:
         raise ClosureError(
-            f"Case must be Approved or Filed before closing (currently {case.status})"
+            f"Case must be Approved / Filed / Lawyer Approved before closing "
+            f"(currently {case.status})"
         )
     existing = (
         db.query(CaseClosure).filter(CaseClosure.case_id == case.id).first()

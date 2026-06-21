@@ -60,7 +60,10 @@ export function CashRequestsPanel({ caseId, status }: Props) {
     load();
   }, [caseId]);
 
-  const blocked = status !== 'Approved' && status !== 'Filed';
+  const blocked =
+    status !== 'Approved' &&
+    status !== 'Filed' &&
+    status !== 'Lawyer Approved';
 
   async function create() {
     setBusy(true);
