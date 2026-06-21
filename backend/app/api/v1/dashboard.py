@@ -80,8 +80,16 @@ def get_kpis(
     appfil = sum(1 for c in cases if c.status in ("Approved", "Filed"))
     rejected = sum(1 for c in cases if c.status == "Rejected")
     closed = sum(1 for c in cases if c.status == "Closed")
+    # Drafts are private to the Accountant and shouldn't show up in the
+    # "total legal amount" headline KPI - only Submitted-and-onwards
+    # cases carry committed business value.
     total_amount = sum(
-        (c.legal_filing_amount or Decimal("0") for c in cases), Decimal("0")
+        (
+            c.legal_filing_amount or Decimal("0")
+            for c in cases
+            if c.status != "Draft"
+        ),
+        Decimal("0"),
     )
 
     paid = (
@@ -92,11 +100,20 @@ def get_kpis(
     )
 
     now = datetime.now(timezone.utc)
+
+    def _is_overdue(due: datetime | None) -> bool:
+        if not due:
+            return False
+        # SQLite hands back naive datetimes; assume UTC so the
+        # comparison with the aware ``now`` doesn't raise.
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        return due < now
+
     overdue = sum(
         1
         for c in cases
-        if c.sla_due_at
-        and c.sla_due_at < now
+        if _is_overdue(c.sla_due_at)
         and c.status in ("Submitted", "In Review")
     )
 

@@ -13,6 +13,7 @@ import { useParams } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { api, API_BASE, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
+import { CaseCombobox } from '@/components/CaseCombobox';
 
 type ParamDef = {
   name: string;
@@ -209,6 +210,14 @@ export default function ReportRunnerPage() {
                   onChange={(e) => up(p.name, e.target.value)}
                   className="rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm"
                 />
+              ) : p.type === 'case_search' ? (
+                <div className="w-80">
+                  <CaseCombobox
+                    value={paramValues[p.name] ?? ''}
+                    onChange={(v) => up(p.name, v)}
+                    placeholder="Search by case number or customer..."
+                  />
+                </div>
               ) : (
                 <input
                   type="text"

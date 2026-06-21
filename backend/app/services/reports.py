@@ -672,7 +672,10 @@ REPORTS: dict[str, ReportDef] = {
             permission="cases:read",
             params=(
                 ParamDef(
-                    "case_no", "text", "Case No. (PUG-LEGAL-YYYY-NNNN)", required=True
+                    # Rendered as a searchable typeahead on the frontend
+                    # so the user can pick by case_no OR customer name
+                    # instead of memorising "PUG-LEGAL-YYYY-NNNN".
+                    "case_no", "case_search", "Case", required=True
                 ),
             ),
             query=case_cash_flow,

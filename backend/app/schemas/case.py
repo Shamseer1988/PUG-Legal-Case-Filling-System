@@ -104,6 +104,17 @@ class CaseListItem(BaseModel):
     submitted_at: datetime | None
 
 
+class CaseSearchHit(BaseModel):
+    """Lightweight row for the typeahead case picker."""
+
+    id: int
+    case_no: str
+    customer_name: str
+    division_name: str
+    legal_filing_amount: Decimal
+    status: str
+
+
 class CaseRead(CaseBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

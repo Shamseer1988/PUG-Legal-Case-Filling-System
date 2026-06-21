@@ -32,6 +32,7 @@ from app.schemas.case import (
     CaseCreate,
     CaseListItem,
     CaseRead,
+    CaseSearchHit,
     CaseUpdate,
 )
 from app.schemas.closure import ClosureCreate, ClosureRead
@@ -68,6 +69,56 @@ def list_cases(
 ) -> list[CaseListItem]:
     rows = _scoped_query(db, user).order_by(Case.id.desc()).limit(500).all()
     return [CaseListItem.model_validate(r) for r in rows]
+
+
+@router.get("/search", response_model=list[CaseSearchHit])
+def search_cases(
+    q: str = "",
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> list[CaseSearchHit]:
+    """Typeahead for the case-picker on reports / dashboards.
+
+    Returns matching cases scoped to the user's divisions (super
+    users / wildcard-perm users see all). Matches against either
+    the case number or the customer's name.
+    """
+    from app.models.masters import Customer, Division
+
+    query = _scoped_query(db, user).join(
+        Customer, Case.customer_id == Customer.id
+    ).join(Division, Case.division_id == Division.id)
+    needle = (q or "").strip()
+    if needle:
+        like = f"%{needle}%"
+        query = query.filter(
+            (Case.case_no.ilike(like)) | (Customer.name.ilike(like))
+        )
+    rows = (
+        query.with_entities(
+            Case.id,
+            Case.case_no,
+            Customer.name,
+            Division.name,
+            Case.legal_filing_amount,
+            Case.status,
+        )
+        .order_by(Case.id.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    return [
+        CaseSearchHit(
+            id=r[0],
+            case_no=r[1],
+            customer_name=r[2] or "",
+            division_name=r[3] or "",
+            legal_filing_amount=r[4] or 0,
+            status=r[5],
+        )
+        for r in rows
+    ]
 
 
 @router.post("", response_model=CaseRead, status_code=status.HTTP_201_CREATED)
