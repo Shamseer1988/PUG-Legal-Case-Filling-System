@@ -13,7 +13,7 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_permission
-from app.core.permissions import CASES_CREATE, CASES_READ
+from app.core.permissions import CASES_CREATE, CASES_READ, CASES_SIGNED_FORM
 from app.db.session import get_db
 from app.models.case import (
     CASE_STATUS_DRAFT,
@@ -570,6 +570,128 @@ def delete_transition_attachment(
     storage.delete_transition_attachment(case.id, att.stored_filename)
     db.delete(att)
     db.commit()
+
+
+# ----------------- Signed case form (FM / Lawyer) -----------------
+SIGNED_FORM_CATEGORY = "Signed Case Form"
+
+
+@router.get("/{case_id}/signed-form", response_model=AttachmentRead | None)
+def get_signed_form(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+):
+    """Return the latest uploaded signed copy of the case form, or
+    ``null`` if none has been attached yet. Any user with read
+    access to the case can see it."""
+    case = _get_case_or_404(db, user, case_id)
+    att = (
+        db.query(CaseAttachment)
+        .filter(
+            CaseAttachment.case_id == case.id,
+            CaseAttachment.category == SIGNED_FORM_CATEGORY,
+        )
+        .order_by(CaseAttachment.id.desc())
+        .first()
+    )
+    return AttachmentRead.model_validate(att) if att else None
+
+
+@router.post(
+    "/{case_id}/signed-form",
+    response_model=AttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_signed_form(
+    case_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_SIGNED_FORM)),
+) -> AttachmentRead:
+    """Attach the signed copy of the printed case form.
+
+    Restricted to Finance Manager / Lawyer roles (anyone holding
+    ``cases:signed_form``). Any previous signed form on the case is
+    removed so only the most recent one is kept - replacing the
+    document is the expected workflow when the form is re-signed.
+    """
+    case = _get_case_or_404(db, user, case_id)
+
+    stored, size = storage.save_case_attachment(case.id, file)
+    new_att = CaseAttachment(
+        case_id=case.id,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size,
+        category=SIGNED_FORM_CATEGORY,
+        uploaded_by_id=user.id,
+    )
+    db.add(new_att)
+    db.flush()
+
+    # Evict any earlier signed forms so a single canonical copy
+    # lives on the case - no stale evidence floating around.
+    olds = (
+        db.query(CaseAttachment)
+        .filter(
+            CaseAttachment.case_id == case.id,
+            CaseAttachment.category == SIGNED_FORM_CATEGORY,
+            CaseAttachment.id != new_att.id,
+        )
+        .all()
+    )
+    for o in olds:
+        storage.delete_case_attachment(case.id, o.stored_filename)
+        db.delete(o)
+
+    audit_service.record_event(
+        db,
+        action="signed_form_uploaded",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Uploaded signed form '{new_att.original_filename}' for {case.case_no}",
+        meta={"size_bytes": size, "attachment_id": new_att.id},
+        actor=user,
+        commit=True,
+    )
+    db.refresh(new_att)
+    return AttachmentRead.model_validate(new_att)
+
+
+@router.delete(
+    "/{case_id}/signed-form",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_signed_form(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_SIGNED_FORM)),
+) -> None:
+    case = _get_case_or_404(db, user, case_id)
+    rows = (
+        db.query(CaseAttachment)
+        .filter(
+            CaseAttachment.case_id == case.id,
+            CaseAttachment.category == SIGNED_FORM_CATEGORY,
+        )
+        .all()
+    )
+    if not rows:
+        return
+    for a in rows:
+        storage.delete_case_attachment(case.id, a.stored_filename)
+        db.delete(a)
+    audit_service.record_event(
+        db,
+        action="signed_form_removed",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Removed signed form for {case.case_no}",
+        actor=user,
+        commit=True,
+    )
 
 
 # ----------------- Closure -----------------

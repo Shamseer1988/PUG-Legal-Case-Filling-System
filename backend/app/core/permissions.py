@@ -30,6 +30,7 @@ CASES_APPROVE_ED = "cases:approve:ed"
 CASES_APPROVE_FINAL = "cases:approve:final"
 CASES_LAWYER_APPROVE = "cases:approve:lawyer"
 CASES_FILE = "cases:file"
+CASES_SIGNED_FORM = "cases:signed_form"
 HEARINGS_WRITE = "hearings:write"
 EXPENSES_REQUEST = "expenses:request"
 EXPENSES_APPROVE = "expenses:approve"
@@ -69,6 +70,7 @@ ROLE_PRESETS: dict[str, list[str]] = {
     "Finance Manager": [
         CASES_READ,
         CASES_APPROVE_FM,
+        CASES_SIGNED_FORM,
         EXPENSES_APPROVE,
         MASTERS_READ,
     ],
@@ -86,6 +88,7 @@ ROLE_PRESETS: dict[str, list[str]] = {
         CASES_READ,
         CASES_FILE,
         CASES_LAWYER_APPROVE,
+        CASES_SIGNED_FORM,
         HEARINGS_WRITE,
         EXPENSES_REQUEST,
         MASTERS_READ,
@@ -153,6 +156,7 @@ ACTION_CASE_LAWYER_APPROVE = "case.lawyer.approve"  # explicit lawyer sign-off a
 ACTION_CASE_FILE = "case.file"
 ACTION_CASE_CLOSE = "case.close"
 ACTION_CASE_CREATE = "case.create"
+ACTION_CASE_SIGNED_FORM_UPLOAD = "case.signed_form.upload"
 ACTION_CASH_REQUEST = "cash.request"
 ACTION_CASH_APPROVE = "cash.approve"
 ACTION_CASH_PAY = "cash.pay"
@@ -196,6 +200,7 @@ ROLE_CAPABILITIES: dict[str, dict] = {
             ACTION_CASE_APPROVE_AUDIT, ACTION_CASE_APPROVE_FM,
             ACTION_CASE_APPROVE_ED, ACTION_CASE_APPROVE_FINAL,
             ACTION_CASE_LAWYER_APPROVE, ACTION_CASE_FILE, ACTION_CASE_CLOSE,
+            ACTION_CASE_SIGNED_FORM_UPLOAD,
             ACTION_CASH_REQUEST, ACTION_CASH_APPROVE, ACTION_CASH_PAY,
         ],
         "scope": SCOPE_ALL,
@@ -254,7 +259,9 @@ ROLE_CAPABILITIES: dict[str, dict] = {
             MENU_REPORTS, MENU_SCHEDULED_REPORTS,
         ],
         "actions": [
-            ACTION_CASE_APPROVE_FM, ACTION_CASH_APPROVE,
+            ACTION_CASE_APPROVE_FM,
+            ACTION_CASE_SIGNED_FORM_UPLOAD,
+            ACTION_CASH_APPROVE,
         ],
         "scope": SCOPE_OWN_DIVISIONS,
     },
@@ -287,7 +294,9 @@ ROLE_CAPABILITIES: dict[str, dict] = {
             MENU_REPORTS, MENU_SCHEDULED_REPORTS,
         ],
         "actions": [
-            ACTION_CASE_LAWYER_APPROVE, ACTION_CASE_FILE, ACTION_CASH_REQUEST,
+            ACTION_CASE_LAWYER_APPROVE, ACTION_CASE_FILE,
+            ACTION_CASE_SIGNED_FORM_UPLOAD,
+            ACTION_CASH_REQUEST,
         ],
         "scope": SCOPE_ALL,
     },

@@ -119,6 +119,7 @@ export const ACTION = {
   CASE_LAWYER_APPROVE: 'case.lawyer.approve',
   CASE_FILE: 'case.file',
   CASE_CLOSE: 'case.close',
+  CASE_SIGNED_FORM_UPLOAD: 'case.signed_form.upload',
   CASH_REQUEST: 'cash.request',
   CASH_APPROVE: 'cash.approve',
   CASH_PAY: 'cash.pay',

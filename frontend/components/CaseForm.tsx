@@ -14,6 +14,7 @@ import { HearingsPanel } from '@/components/HearingsPanel';
 import { CashRequestsPanel } from '@/components/CashRequestsPanel';
 import { ClosurePanel } from '@/components/ClosurePanel';
 import { PreviousAttachmentsModal } from '@/components/PreviousAttachmentsModal';
+import { SignedFormPanel } from '@/components/SignedFormPanel';
 
 type ChequeDraft = {
   cheque_number: string;
@@ -323,6 +324,11 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             status={meta.status}
             currentStage={meta.current_stage}
             onDone={() => setReloadKey((k) => k + 1)}
+          />
+          <SignedFormPanel
+            caseId={meta.id}
+            status={meta.status}
+            onChange={() => setReloadKey((k) => k + 1)}
           />
           {/* Phase 4 panels - visible once the case reaches Approved */}
           {(meta.status === 'Approved' ||
