@@ -25,6 +25,38 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+def _filter_active_recipients(db: Session, emails: list[str]) -> list[str]:
+    """Phase 27: drop recipients whose User row is inactive.
+
+    Addresses that don't correspond to a User at all are kept
+    (external recipients are a legitimate use case). Addresses
+    whose User exists but is_active=False are silently dropped
+    so a manager who left the company stops receiving scheduled
+    reports they no longer have access to.
+    """
+    addrs = [e.strip() for e in (emails or []) if e and e.strip()]
+    if not addrs:
+        return []
+    rows = (
+        db.query(User.email, User.is_active)
+        .filter(User.email.in_([a.lower() for a in addrs]))
+        .all()
+    )
+    status_by_email = {email.lower(): is_active for email, is_active in rows}
+    out: list[str] = []
+    for a in addrs:
+        # Unknown email -> external recipient, keep.
+        # Known email -> only keep if still active.
+        is_active = status_by_email.get(a.lower(), True)
+        if is_active:
+            out.append(a)
+        else:
+            logger.info(
+                "Scheduled report: dropping inactive recipient {}", a
+            )
+    return out
+
+
 def _sample_rows(data: dict, n: int = 8) -> tuple[list[dict], list[dict]]:
     cols = data.get("columns") or []
     rows = data.get("rows") or []
@@ -109,11 +141,21 @@ def execute_one(db: Session, schedule: ScheduledReport) -> ScheduledReportRun:
         sample_cols, sample_rows = _sample_rows(data)
 
         subject = f"[Scheduled] {schedule.name} - {data['title']}"
+        # Phase 27: prune recipients whose User row has been
+        # deactivated since the schedule was last edited.
+        to_list = _filter_active_recipients(db, list(schedule.recipients or []))
+        cc_list = _filter_active_recipients(db, list(schedule.cc or []))
+        bcc_list = _filter_active_recipients(db, list(schedule.bcc or []))
+        if not to_list and not cc_list and not bcc_list:
+            raise ValueError(
+                "All recipients are inactive; nothing to send. "
+                "Update the schedule with at least one active recipient."
+            )
         log = email_service.queue_email(
             db,
-            to_emails=list(schedule.recipients or []),
-            cc_emails=list(schedule.cc or []),
-            bcc_emails=list(schedule.bcc or []),
+            to_emails=to_list,
+            cc_emails=cc_list,
+            bcc_emails=bcc_list,
             subject=subject,
             template="scheduled_report_email.html",
             context={

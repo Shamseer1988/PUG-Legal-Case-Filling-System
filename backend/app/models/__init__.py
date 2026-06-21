@@ -23,6 +23,7 @@ from app.models.masters import (
     Salesman,
 )
 from app.models.notification import EmailLog, EmailLogAttachment, Notification
+from app.models.saved_filter import SavedReportFilter
 from app.models.scheduled_report import ScheduledReport, ScheduledReportRun
 from app.models.settings import SettingsKV
 from app.models.user import Role, User, UserDivisionMap
@@ -54,6 +55,7 @@ __all__ = [
     "EmailLogAttachment",
     "ScheduledReport",
     "ScheduledReportRun",
+    "SavedReportFilter",
     "AuditLog",
     "BackupJob",
     "RestoreJob",

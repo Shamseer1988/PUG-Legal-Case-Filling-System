@@ -17,6 +17,7 @@ from app.api.v1 import (
     notifications,
     reports,
     roles,
+    saved_filters,
     scheduled_reports,
     settings as settings_router,
     users,
@@ -35,6 +36,7 @@ api_router.include_router(court.cash_router)
 api_router.include_router(court.hearings_router)
 api_router.include_router(notifications.router)
 api_router.include_router(email_log.router)
+api_router.include_router(saved_filters.router)
 api_router.include_router(reports.router)
 api_router.include_router(scheduled_reports.router)
 api_router.include_router(audit.router)

@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, API_BASE, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { CaseCombobox } from '@/components/CaseCombobox';
+import { SavedFilterPicker } from '@/components/SavedFilterPicker';
 
 type ParamDef = {
   name: string;
@@ -150,6 +151,16 @@ export default function ReportRunnerPage() {
           <p className="text-xs text-[rgb(var(--color-muted))]">{descriptor?.description}</p>
         </div>
         <div className="flex items-center gap-2">
+          <SavedFilterPicker
+            reportKey={reportKey}
+            currentParams={paramValues}
+            onApply={(p) => {
+              // Replace param values from the picked filter; auto-run
+              // is wired by the existing effect that watches paramValues.
+              setParamValues(p);
+              run();
+            }}
+          />
           <button
             onClick={() => download('xlsx')}
             className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
