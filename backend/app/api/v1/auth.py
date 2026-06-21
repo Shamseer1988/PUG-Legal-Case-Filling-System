@@ -2,7 +2,8 @@
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.core import request_context
@@ -13,12 +14,14 @@ from app.core.security import (
     create_access_token,
     create_refresh_token,
     decode_token,
+    hash_password,
     verify_password,
 )
 from app.db.session import get_db
 from app.models.user import User
 from app.schemas.auth import (
     CapabilitiesResponse,
+    ChangePasswordRequest,
     LoginRequest,
     MeResponse,
     RefreshRequest,
@@ -26,7 +29,7 @@ from app.schemas.auth import (
     TotpEnrollResponse,
     TotpVerifyRequest,
 )
-from app.services import audit_service, totp_service
+from app.services import audit_service, storage, totp_service
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -125,6 +128,7 @@ def me(user: User = Depends(get_current_user)) -> MeResponse:
         is_super=user.is_super,
         divisions=[d.id for d in user.divisions],
         totp_enabled=user.totp_enabled,
+        has_signature=bool(user.signature_path),
     )
 
 
@@ -205,3 +209,102 @@ def totp_disable(
         commit=True,
     )
     return {"enabled": False}
+
+
+# ---------------- Change password ----------------
+@router.post("/change-password")
+def change_password(
+    payload: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Allow the signed-in user to rotate their own password.
+
+    Requires the current password to defeat session-hijack attacks
+    (a stolen token alone shouldn't be enough to lock the account
+    owner out).
+    """
+    if not verify_password(payload.current_password, user.password_hash):
+        audit_service.record_event(
+            db,
+            action="password_change_failed",
+            entity_type="User",
+            entity_id=user.id,
+            summary=f"Wrong current password for {user.email}",
+            actor=user,
+            commit=True,
+        )
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if payload.current_password == payload.new_password:
+        raise HTTPException(
+            status_code=400, detail="New password must be different from the current one"
+        )
+    user.password_hash = hash_password(payload.new_password)
+    audit_service.record_event(
+        db,
+        action="password_change",
+        entity_type="User",
+        entity_id=user.id,
+        summary=f"Password changed by {user.email}",
+        actor=user,
+    )
+    db.commit()
+    return {"changed": True}
+
+
+# ---------------- Signature image ----------------
+@router.post("/me/signature")
+def upload_signature(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    """Save a signature image so it can be embedded in printed forms."""
+    try:
+        rel_path, size = storage.save_user_signature(user.id, file)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    user.signature_path = rel_path
+    audit_service.record_event(
+        db,
+        action="signature_uploaded",
+        entity_type="User",
+        entity_id=user.id,
+        summary=f"Uploaded signature for {user.email}",
+        meta={"size_bytes": size},
+        actor=user,
+    )
+    db.commit()
+    return {"signature_path": rel_path, "size_bytes": size}
+
+
+@router.get("/me/signature")
+def get_my_signature(
+    user: User = Depends(get_current_user),
+) -> FileResponse:
+    if not user.signature_path:
+        raise HTTPException(status_code=404, detail="No signature on file")
+    p = storage.get_user_signature_path(user.signature_path)
+    if not p.exists():
+        raise HTTPException(status_code=410, detail="Signature file missing")
+    return FileResponse(p)
+
+
+@router.delete("/me/signature", status_code=status.HTTP_204_NO_CONTENT)
+def delete_my_signature(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    if not user.signature_path:
+        return
+    storage.delete_user_signature(user.signature_path)
+    user.signature_path = ""
+    audit_service.record_event(
+        db,
+        action="signature_deleted",
+        entity_type="User",
+        entity_id=user.id,
+        summary=f"Removed signature for {user.email}",
+        actor=user,
+    )
+    db.commit()

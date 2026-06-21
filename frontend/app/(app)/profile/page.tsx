@@ -1,8 +1,8 @@
 'use client';
 
-import { CheckCircle2, ShieldCheck, ShieldOff } from 'lucide-react';
-import { useState } from 'react';
-import { api, ApiError } from '@/lib/api';
+import { CheckCircle2, KeyRound, PenLine, ShieldCheck, ShieldOff, Trash2, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore, type Me } from '@/lib/auth';
 
 type EnrollResponse = {
@@ -14,11 +14,54 @@ type EnrollResponse = {
 export default function ProfilePage() {
   const me = useAuthStore((s) => s.me);
   const setMe = useAuthStore((s) => s.setMe);
+  const token = useAuthStore((s) => s.accessToken);
   const [enroll, setEnroll] = useState<EnrollResponse | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  // ---- Change password ----
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' });
+  const [pwErr, setPwErr] = useState<string | null>(null);
+  const [pwInfo, setPwInfo] = useState<string | null>(null);
+  const [pwBusy, setPwBusy] = useState(false);
+
+  // ---- Signature ----
+  const sigInputRef = useRef<HTMLInputElement | null>(null);
+  const [sigErr, setSigErr] = useState<string | null>(null);
+  const [sigInfo, setSigInfo] = useState<string | null>(null);
+  const [sigBusy, setSigBusy] = useState(false);
+  const [sigBlob, setSigBlob] = useState<string | null>(null);
+
+  // Re-fetch + render the signature preview whenever the "has signature"
+  // flag flips. Uses the bearer token so the image isn't served as an
+  // unauthenticated public URL.
+  useEffect(() => {
+    if (!me?.has_signature || !token) {
+      setSigBlob(null);
+      return;
+    }
+    let cancelled = false;
+    let created: string | null = null;
+    (async () => {
+      try {
+        const r = await fetch(`${API_BASE}/api/v1/auth/me/signature`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!r.ok) return;
+        const blob = await r.blob();
+        created = URL.createObjectURL(blob);
+        if (!cancelled) setSigBlob(created);
+      } catch {
+        /* ignore */
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (created) URL.revokeObjectURL(created);
+    };
+  }, [me?.has_signature, token]);
 
   async function refreshMe() {
     try {
@@ -70,6 +113,75 @@ export default function ProfilePage() {
       setErr((e as ApiError).message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwErr(null);
+    setPwInfo(null);
+    if (pwForm.next !== pwForm.confirm) {
+      setPwErr('New password and confirmation do not match.');
+      return;
+    }
+    if (pwForm.next.length < 8) {
+      setPwErr('New password must be at least 8 characters.');
+      return;
+    }
+    setPwBusy(true);
+    try {
+      await api('/api/v1/auth/change-password', {
+        method: 'POST',
+        body: { current_password: pwForm.current, new_password: pwForm.next },
+      });
+      setPwInfo('Password updated. Use your new password next time you sign in.');
+      setPwForm({ current: '', next: '', confirm: '' });
+    } catch (ex) {
+      setPwErr((ex as ApiError).message);
+    } finally {
+      setPwBusy(false);
+    }
+  }
+
+  async function uploadSignature(file: File) {
+    setSigErr(null);
+    setSigInfo(null);
+    setSigBusy(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch(`${API_BASE}/api/v1/auth/me/signature`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        body: fd,
+      });
+      if (!r.ok) {
+        const body = await r.json().catch(() => ({}));
+        throw new Error(body?.detail || `Upload failed (${r.status})`);
+      }
+      setSigInfo('Signature saved. It will appear on the printed case form.');
+      refreshMe();
+    } catch (ex) {
+      setSigErr((ex as Error).message);
+    } finally {
+      setSigBusy(false);
+      if (sigInputRef.current) sigInputRef.current.value = '';
+    }
+  }
+
+  async function removeSignature() {
+    if (!confirm('Remove your signature image?')) return;
+    setSigErr(null);
+    setSigInfo(null);
+    setSigBusy(true);
+    try {
+      await api('/api/v1/auth/me/signature', { method: 'DELETE' });
+      setSigInfo('Signature removed.');
+      refreshMe();
+    } catch (ex) {
+      setSigErr((ex as ApiError).message);
+    } finally {
+      setSigBusy(false);
     }
   }
 
@@ -200,7 +312,153 @@ export default function ProfilePage() {
           </div>
         )}
       </section>
+
+      {/* -------- Change Password -------- */}
+      <section className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-5 shadow-soft">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-400">
+          <KeyRound className="h-4 w-4" /> Change Password
+        </h2>
+        {pwErr && (
+          <div className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+            {pwErr}
+          </div>
+        )}
+        {pwInfo && (
+          <div className="mb-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 className="-mt-0.5 mr-1 inline h-4 w-4" />
+            {pwInfo}
+          </div>
+        )}
+        <form className="grid grid-cols-1 gap-3 md:grid-cols-3" onSubmit={changePassword}>
+          <PwField
+            label="Current password"
+            autoComplete="current-password"
+            value={pwForm.current}
+            onChange={(v) => setPwForm({ ...pwForm, current: v })}
+            required
+          />
+          <PwField
+            label="New password"
+            autoComplete="new-password"
+            value={pwForm.next}
+            onChange={(v) => setPwForm({ ...pwForm, next: v })}
+            required
+          />
+          <PwField
+            label="Confirm new password"
+            autoComplete="new-password"
+            value={pwForm.confirm}
+            onChange={(v) => setPwForm({ ...pwForm, confirm: v })}
+            required
+          />
+          <div className="md:col-span-3">
+            <button
+              type="submit"
+              disabled={pwBusy || !pwForm.current || !pwForm.next || !pwForm.confirm}
+              className="rounded-md bg-pug-navy-700 px-3 py-2 text-sm font-semibold text-white hover:bg-pug-navy-600 disabled:opacity-50"
+            >
+              {pwBusy ? 'Saving...' : 'Update Password'}
+            </button>
+            <p className="mt-2 text-[11px] text-[rgb(var(--color-muted))]">
+              Minimum 8 characters. Must be different from your current password.
+            </p>
+          </div>
+        </form>
+      </section>
+
+      {/* -------- Signature -------- */}
+      <section className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-5 shadow-soft">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-400">
+          <PenLine className="h-4 w-4" /> Signature
+        </h2>
+        <p className="mb-3 text-xs text-[rgb(var(--color-muted))]">
+          Upload an image of your signature (PNG, JPG, GIF or WebP). It will be
+          embedded above your name on every printed case form where you are
+          listed as a signatory.
+        </p>
+        {sigErr && (
+          <div className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+            {sigErr}
+          </div>
+        )}
+        {sigInfo && (
+          <div className="mb-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 className="-mt-0.5 mr-1 inline h-4 w-4" />
+            {sigInfo}
+          </div>
+        )}
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex h-24 w-48 items-center justify-center rounded-md border border-dashed border-[rgb(var(--color-border))] bg-[rgb(var(--color-bg))]">
+            {sigBlob ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={sigBlob} alt="Your signature" className="max-h-full max-w-full object-contain" />
+            ) : (
+              <span className="text-xs text-[rgb(var(--color-muted))]">No signature uploaded</span>
+            )}
+          </div>
+          <div className="flex flex-col gap-2">
+            <input
+              ref={sigInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/gif,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadSignature(f);
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => sigInputRef.current?.click()}
+              disabled={sigBusy}
+              className="inline-flex items-center gap-2 rounded-md bg-pug-gold-500 px-3 py-2 text-sm font-semibold text-pug-navy-800 hover:bg-pug-gold-400 disabled:opacity-50"
+            >
+              <Upload className="h-4 w-4" /> {me?.has_signature ? 'Replace Signature' : 'Upload Signature'}
+            </button>
+            {me?.has_signature && (
+              <button
+                type="button"
+                onClick={removeSignature}
+                disabled={sigBusy}
+                className="inline-flex items-center gap-2 rounded-md border border-rose-500/40 px-3 py-2 text-sm text-rose-600 hover:bg-rose-500/10 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" /> Remove
+              </button>
+            )}
+          </div>
+        </div>
+      </section>
     </div>
+  );
+}
+
+function PwField({
+  label,
+  value,
+  onChange,
+  required,
+  autoComplete,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  required?: boolean;
+  autoComplete?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+        {label}
+      </span>
+      <input
+        type="password"
+        required={required}
+        autoComplete={autoComplete}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm focus:border-pug-gold-500 focus:outline-none"
+      />
+    </label>
   );
 }
 

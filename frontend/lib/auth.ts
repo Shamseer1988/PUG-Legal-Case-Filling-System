@@ -12,6 +12,7 @@ export type Me = {
   is_super: boolean;
   divisions: number[];
   totp_enabled?: boolean;
+  has_signature?: boolean;
 };
 
 type State = {

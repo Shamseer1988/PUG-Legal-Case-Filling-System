@@ -16,6 +16,7 @@ from reportlab.pdfgen.canvas import Canvas
 from reportlab.platypus import (
     BaseDocTemplate,
     Frame,
+    Image,
     PageTemplate,
     Paragraph,
     Spacer,
@@ -28,6 +29,7 @@ from app.core.config import settings
 from app.models.case import Case
 from app.models.masters import Bank, CaseType, Customer, Division, Lawyer, Salesman
 from app.models.user import User
+from app.services import storage
 
 TEMPLATES = Path(__file__).resolve().parent.parent / "templates"
 
@@ -56,6 +58,18 @@ def _user_name(db: Session, uid: int | None) -> str:
         return ""
     u = db.get(User, uid)
     return u.full_name if u else ""
+
+
+def _user_signature_path(db: Session, uid: int | None) -> str:
+    """Return the on-disk path to a user's uploaded signature image,
+    or "" if they haven't uploaded one."""
+    if not uid:
+        return ""
+    u = db.get(User, uid)
+    if not u or not u.signature_path:
+        return ""
+    p = storage.get_user_signature_path(u.signature_path)
+    return str(p) if p.exists() else ""
 
 
 def _lawyer_name(db: Session, lid: int | None) -> str:
@@ -233,15 +247,18 @@ def render_case_pdf(db: Session, case: Case) -> bytes:
         for b in db.query(Bank).filter(Bank.id.in_(bank_ids)).all():
             bank_by_id[b.id] = b
 
-    signatory_grid = [
-        ("Accountant", _user_name(db, case.created_by_id)),
-        ("Sales Manager", _user_name(db, case.sales_manager_id)),
-        ("Division Manager", _user_name(db, case.division_manager_id)),
-        ("Auditor", _user_name(db, case.auditor_id)),
-        ("Finance Manager", _user_name(db, case.fm_id)),
-        ("Executive Director", _user_name(db, case.ed_id)),
-        ("Chairman / MD", _user_name(db, case.chairman_id)),
-        ("Lawyer", _lawyer_name(db, case.lawyer_id)),
+    # (role label, signer name, on-disk signature image path or "")
+    # The Lawyer is a master record (no User row), so they never get a
+    # signature image — only the name is shown for that slot.
+    signatory_grid: list[tuple[str, str, str]] = [
+        ("Accountant", _user_name(db, case.created_by_id), _user_signature_path(db, case.created_by_id)),
+        ("Sales Manager", _user_name(db, case.sales_manager_id), _user_signature_path(db, case.sales_manager_id)),
+        ("Division Manager", _user_name(db, case.division_manager_id), _user_signature_path(db, case.division_manager_id)),
+        ("Auditor", _user_name(db, case.auditor_id), _user_signature_path(db, case.auditor_id)),
+        ("Finance Manager", _user_name(db, case.fm_id), _user_signature_path(db, case.fm_id)),
+        ("Executive Director", _user_name(db, case.ed_id), _user_signature_path(db, case.ed_id)),
+        ("Chairman / MD", _user_name(db, case.chairman_id), _user_signature_path(db, case.chairman_id)),
+        ("Lawyer", _lawyer_name(db, case.lawyer_id), ""),
     ]
 
     # --- Document setup ---
@@ -504,21 +521,34 @@ def render_case_pdf(db: Session, case: Case) -> bytes:
     elements.extend(_section_heading("SIGNATORIES", st))
 
     # 4 columns × 2 rows
+    sig_col_w = doc.width / 4 - 6 * mm
     sig_cells: list[list[Any]] = [[], []]
-    for i, (role, name) in enumerate(signatory_grid):
+    for i, (role, name, sig_path) in enumerate(signatory_grid):
         row_idx = i // 4
+        # Signature image (if present) or a fixed-height spacer to keep
+        # cell heights consistent across the grid.
+        if sig_path:
+            try:
+                sig_flowable: Any = Image(
+                    sig_path, width=sig_col_w * 0.7, height=12 * mm, kind="proportional"
+                )
+            except Exception:
+                sig_flowable = Spacer(1, 14 * mm)
+        else:
+            sig_flowable = Spacer(1, 14 * mm)
         cell_content = Table(
             [
                 [Paragraph(role.upper(), st["sig_role"])],
                 [Paragraph(name or "&nbsp;", st["sig_name"])],
-                [Spacer(1, 14 * mm)],
+                [sig_flowable],
                 [Paragraph("Signature &amp; Date", st["small_muted"])],
             ],
-            colWidths=[doc.width / 4 - 6 * mm],
+            colWidths=[sig_col_w],
         )
         cell_content.setStyle(TableStyle([
             ("TOPPADDING", (0, 0), (-1, -1), 2),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+            ("ALIGN", (0, 2), (0, 2), "CENTER"),
             ("LINEBELOW", (0, 2), (0, 2), 0.5, NAVY),
         ]))
         sig_cells[row_idx].append(cell_content)

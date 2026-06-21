@@ -1,6 +1,6 @@
 """Authentication request/response schemas."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class LoginRequest(BaseModel):
@@ -31,6 +31,7 @@ class MeResponse(BaseModel):
     is_super: bool
     divisions: list[int]
     totp_enabled: bool = False
+    has_signature: bool = False
 
 
 class TotpEnrollResponse(BaseModel):
@@ -41,6 +42,11 @@ class TotpEnrollResponse(BaseModel):
 
 class TotpVerifyRequest(BaseModel):
     code: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class CapabilitiesResponse(BaseModel):

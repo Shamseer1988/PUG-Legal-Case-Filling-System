@@ -37,6 +37,9 @@ class User(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
 
+    # Phase 18 - signature image (relative to STORAGE_LOCAL_PATH)
+    signature_path: Mapped[str] = mapped_column(String(500), default="", nullable=False)
+
     role: Mapped[Role] = relationship(lazy="joined")
     divisions: Mapped[list["Division"]] = relationship(
         secondary="user_division_map", lazy="selectin"
