@@ -36,6 +36,10 @@ class CourtFilingRead(CourtFilingBase):
     filed_by_id: int
     filed_by_name: str = ""
     created_at: datetime
+    # Phase 21: include the acknowledgement attachment's metadata so
+    # the panel can render a download chip without a second request.
+    acknowledgment_attachment_filename: str = ""
+    acknowledgment_attachment_size: int = 0
 
 
 # ---------- Hearing ----------

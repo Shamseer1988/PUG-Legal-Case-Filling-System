@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user, require_permission
@@ -15,7 +15,7 @@ from app.core.permissions import (
     HEARINGS_WRITE,
 )
 from app.db.session import get_db
-from app.models.case import Case
+from app.models.case import Case, CaseAttachment
 from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.user import User
 from app.schemas.court import (
@@ -33,7 +33,7 @@ from app.schemas.court import (
     HearingRead,
     HearingUpdate,
 )
-from app.services import court_service
+from app.services import audit_service, court_service, storage
 
 cases_router = APIRouter(prefix="/cases", tags=["court"])
 cash_router = APIRouter(prefix="/cash-requests", tags=["court"])
@@ -60,6 +60,13 @@ def _name(db: Session, uid: int | None) -> str:
 
 
 def _filing_to_read(db: Session, f: CourtFiling) -> CourtFilingRead:
+    ack_name = ""
+    ack_size = 0
+    if f.acknowledgment_attachment_id:
+        att = db.get(CaseAttachment, f.acknowledgment_attachment_id)
+        if att:
+            ack_name = att.original_filename
+            ack_size = att.size_bytes
     return CourtFilingRead(
         id=f.id,
         case_id=f.case_id,
@@ -68,6 +75,8 @@ def _filing_to_read(db: Session, f: CourtFiling) -> CourtFilingRead:
         filed_court=f.filed_court,
         filed_date=f.filed_date,
         acknowledgment_attachment_id=f.acknowledgment_attachment_id,
+        acknowledgment_attachment_filename=ack_name,
+        acknowledgment_attachment_size=ack_size,
         notes=f.notes,
         filed_by_id=f.filed_by_id,
         filed_by_name=_name(db, f.filed_by_id),
@@ -156,6 +165,97 @@ def update_court_filing(
         f = court_service.update_court_filing(db, case, user, payload)
     except court_service.CourtError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    return _filing_to_read(db, f)
+
+
+@cases_router.post(
+    "/{case_id}/court-filing/attachment",
+    response_model=CourtFilingRead,
+)
+def upload_court_filing_attachment(
+    case_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_FILE)),
+):
+    """Attach the government acknowledgement file to an existing
+    court filing. Replaces any previously linked attachment so
+    multiple stale files don't accumulate on the case."""
+    case = _scoped_case_or_404(db, user, case_id)
+    f = db.query(CourtFiling).filter(CourtFiling.case_id == case.id).first()
+    if not f:
+        raise HTTPException(
+            status_code=400,
+            detail="Record the court filing details before uploading the acknowledgement",
+        )
+
+    # Stream-save the new file alongside other case attachments.
+    stored, size = storage.save_case_attachment(case.id, file)
+    att = CaseAttachment(
+        case_id=case.id,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size,
+        category="Court Acknowledgement",
+        uploaded_by_id=user.id,
+    )
+    db.add(att)
+    db.flush()
+
+    # If an earlier acknowledgement existed, drop it before swapping
+    # in the new one so we don't leave dangling rows behind.
+    if f.acknowledgment_attachment_id:
+        old = db.get(CaseAttachment, f.acknowledgment_attachment_id)
+        if old and old.id != att.id:
+            storage.delete_case_attachment(case.id, old.stored_filename)
+            db.delete(old)
+
+    f.acknowledgment_attachment_id = att.id
+    audit_service.record_event(
+        db,
+        action="court_filing_attachment",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Uploaded acknowledgement '{att.original_filename}' for {case.case_no}",
+        meta={"attachment_id": att.id, "size_bytes": size},
+        actor=user,
+        commit=True,
+    )
+    db.refresh(f)
+    return _filing_to_read(db, f)
+
+
+@cases_router.delete(
+    "/{case_id}/court-filing/attachment",
+    response_model=CourtFilingRead,
+)
+def delete_court_filing_attachment(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_FILE)),
+):
+    case = _scoped_case_or_404(db, user, case_id)
+    f = db.query(CourtFiling).filter(CourtFiling.case_id == case.id).first()
+    if not f:
+        raise HTTPException(status_code=404, detail="Court filing not found")
+    if not f.acknowledgment_attachment_id:
+        return _filing_to_read(db, f)
+    att = db.get(CaseAttachment, f.acknowledgment_attachment_id)
+    f.acknowledgment_attachment_id = None
+    if att:
+        storage.delete_case_attachment(case.id, att.stored_filename)
+        db.delete(att)
+    audit_service.record_event(
+        db,
+        action="court_filing_attachment_removed",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Removed court filing acknowledgement for {case.case_no}",
+        actor=user,
+        commit=True,
+    )
+    db.refresh(f)
     return _filing_to_read(db, f)
 
 
