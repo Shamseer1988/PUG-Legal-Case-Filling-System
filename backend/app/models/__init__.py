@@ -22,7 +22,7 @@ from app.models.masters import (
     LawyerDivisionMap,
     Salesman,
 )
-from app.models.notification import EmailLog, Notification
+from app.models.notification import EmailLog, EmailLogAttachment, Notification
 from app.models.scheduled_report import ScheduledReport, ScheduledReportRun
 from app.models.settings import SettingsKV
 from app.models.user import Role, User, UserDivisionMap
@@ -51,6 +51,7 @@ __all__ = [
     "CaseClosure",
     "Notification",
     "EmailLog",
+    "EmailLogAttachment",
     "ScheduledReport",
     "ScheduledReportRun",
     "AuditLog",

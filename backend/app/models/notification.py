@@ -2,8 +2,8 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import DateTime, ForeignKey, Integer, LargeBinary, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin
 
@@ -52,6 +52,16 @@ class EmailLog(Base, TimestampMixin):
     error: Mapped[str] = mapped_column(Text, default="")
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Phase 25 - background worker scheduling
+    # When the next delivery attempt should run. NULL = ASAP (used
+    # for freshly-queued rows so the next worker tick picks them up).
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    last_attempted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     event: Mapped[str] = mapped_column(String(50), default="")
     related_case_id: Mapped[int | None] = mapped_column(
         ForeignKey("cases.id", ondelete="SET NULL"), nullable=True
@@ -59,3 +69,36 @@ class EmailLog(Base, TimestampMixin):
     related_user_id: Mapped[int | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
+
+    attachments: Mapped[list["EmailLogAttachment"]] = relationship(
+        back_populates="email_log",
+        cascade="all, delete-orphan",
+        order_by="EmailLogAttachment.id",
+        lazy="selectin",
+    )
+
+
+class EmailLogAttachment(Base, TimestampMixin):
+    """Phase 25: persisted email attachments.
+
+    Each EmailLog row can carry N attachment blobs so the worker can
+    retry a failed send without losing the file, and so admin resend
+    re-attaches the original payload.
+    """
+
+    __tablename__ = "email_log_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email_log_id: Mapped[int] = mapped_column(
+        ForeignKey("email_log.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(
+        String(100), default="application/octet-stream"
+    )
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    email_log: Mapped[EmailLog] = relationship(back_populates="attachments")

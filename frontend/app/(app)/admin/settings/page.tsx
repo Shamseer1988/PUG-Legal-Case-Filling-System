@@ -87,14 +87,27 @@ export default function SettingsPage() {
     setErr(null);
     setInfo(null);
     try {
-      const r = await api<{ ok: boolean; status: string; error: string }>(
-        '/api/v1/settings/smtp/test-send',
-        { method: 'POST', body: { to } },
-      );
-      if (r.ok) {
-        setInfo(`Test sent. Status: ${r.status}.`);
+      const r = await api<{
+        email_log_id: number;
+        status: string;
+        error: string;
+        sent_at: string | null;
+      }>('/api/v1/admin/email-log/test', {
+        method: 'POST',
+        body: { to_email: to },
+      });
+      if (r.status === 'Sent') {
+        setInfo(
+          r.error
+            ? `Test sent in console mode (no SMTP host configured). Email log #${r.email_log_id}.`
+            : `Test sent successfully. Email log #${r.email_log_id}.`,
+        );
       } else {
-        setErr(`Test failed (${r.status}): ${r.error}`);
+        // Status Queued/Failed -- surface the SMTP error so the
+        // admin can fix the config without scrolling logs.
+        setErr(
+          `Test ${r.status} (email log #${r.email_log_id}): ${r.error || 'no error reported'}`,
+        );
       }
     } catch (e) {
       setErr((e as ApiError).message);

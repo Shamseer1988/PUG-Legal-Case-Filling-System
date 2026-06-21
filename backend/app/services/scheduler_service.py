@@ -10,6 +10,7 @@ from loguru import logger
 
 _scheduler: BackgroundScheduler | None = None
 TICK_JOB_ID = "scheduled-reports-tick"
+EMAIL_QUEUE_JOB_ID = "email-queue-tick"
 
 
 def start() -> None:
@@ -26,8 +27,22 @@ def start() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # Phase 25: drain the outbound email queue often enough that
+    # transactional notifications feel near-real-time but not so
+    # often that we hammer the DB when there's nothing to do.
+    _scheduler.add_job(
+        _email_tick,
+        "interval",
+        seconds=10,
+        id=EMAIL_QUEUE_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     _scheduler.start()
-    logger.info("Scheduler started (tick every 60s)")
+    logger.info(
+        "Scheduler started (reports tick=60s, email queue tick=10s)"
+    )
 
 
 def stop() -> None:
@@ -51,6 +66,25 @@ def _tick() -> None:
         scheduled_reports.run_due(db)
     except Exception as e:  # pragma: no cover (defensive)
         logger.exception("Scheduler tick failed: {}", e)
+    finally:
+        db.close()
+
+
+def _email_tick() -> None:
+    """Drain the outbound email queue (Phase 25)."""
+    from app.db.session import SessionLocal
+    from app.services import email_service
+
+    db = SessionLocal()
+    try:
+        stats = email_service.process_queue(db)
+        if stats["picked"]:
+            logger.info(
+                "Email queue tick: picked={picked} sent={sent} retried={retried} failed={failed}",
+                **stats,
+            )
+    except Exception as e:  # pragma: no cover (defensive)
+        logger.exception("Email queue tick failed: {}", e)
     finally:
         db.close()
 

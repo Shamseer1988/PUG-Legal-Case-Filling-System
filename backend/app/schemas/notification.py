@@ -32,6 +32,8 @@ class EmailLogItem(BaseModel):
     event: str
     related_case_id: int | None
     sent_at: datetime | None
+    next_attempt_at: datetime | None = None
+    last_attempted_at: datetime | None = None
     created_at: datetime
     error: str
 
@@ -48,3 +50,14 @@ class EmailLogDetail(EmailLogItem):
 class EmailBounceWebhook(BaseModel):
     email_log_id: int
     error: str
+
+
+class TestEmailRequest(BaseModel):
+    to_email: str
+
+
+class TestEmailResponse(BaseModel):
+    email_log_id: int
+    status: str
+    error: str
+    sent_at: datetime | None
