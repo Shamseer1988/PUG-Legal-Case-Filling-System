@@ -1,21 +1,13 @@
 'use client';
 
-import { Check, Circle, AlertTriangle, MessageSquare, X } from 'lucide-react';
+import { Check, Circle, AlertTriangle, Download, MessageSquare, Paperclip, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-
-type TimelineEntry = {
-  id: number;
-  action_type: string;
-  from_status: string;
-  to_status: string;
-  from_stage: string;
-  to_stage: string;
-  actor_id: number;
-  actor_name: string;
-  comment: string;
-  created_at: string;
-};
+import {
+  downloadTransitionAttachment,
+  formatBytes,
+  type TimelineEntry,
+} from '@/lib/transitionAttachments';
 
 type Stage = {
   key: string;
@@ -141,6 +133,15 @@ export function CaseTimeline({ caseId, currentStage, status }: Props) {
                         {e.comment}
                       </div>
                     )}
+                    {e.attachments.length > 0 && (
+                      <ul className="mt-2 space-y-1">
+                        {e.attachments.map((a) => (
+                          <li key={a.id}>
+                            <AttachmentLink caseId={caseId} attachment={a} />
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </div>
                 </li>
               );
@@ -149,6 +150,49 @@ export function CaseTimeline({ caseId, currentStage, status }: Props) {
         )}
       </div>
     </div>
+  );
+}
+
+function AttachmentLink({
+  caseId,
+  attachment,
+}: {
+  caseId: number;
+  attachment: import('@/lib/transitionAttachments').TransitionAttachment;
+}) {
+  const [busy, setBusy] = useState(false);
+  async function open() {
+    setBusy(true);
+    try {
+      const { url } = await downloadTransitionAttachment(caseId, attachment.id);
+      // Trigger download via temp anchor so the browser uses the
+      // original filename instead of the blob: URL hash.
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = attachment.original_filename;
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      // Revoke after a tick so the navigation has a chance to start.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      onClick={open}
+      disabled={busy}
+      className="inline-flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--color-border))]/40 disabled:opacity-50"
+    >
+      <Paperclip className="h-3 w-3 text-pug-gold-700 dark:text-pug-gold-400" />
+      <span className="font-medium">{attachment.original_filename}</span>
+      <span className="text-[10px] text-[rgb(var(--color-muted))]">
+        ({formatBytes(attachment.size_bytes)})
+      </span>
+      <Download className="h-3 w-3" />
+    </button>
   );
 }
 

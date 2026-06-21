@@ -1,8 +1,14 @@
 'use client';
 
-import { Check, X, AlertTriangle, Send } from 'lucide-react';
-import { useState } from 'react';
+import { Check, X, AlertTriangle, Paperclip, Send, Upload, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
+import {
+  deletePendingTransitionAttachment,
+  formatBytes,
+  uploadTransitionAttachment,
+  type TransitionAttachment,
+} from '@/lib/transitionAttachments';
 
 type Action = 'approve' | 'reject' | 'request_clarification' | 'resubmit';
 
@@ -19,6 +25,8 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
   const [comment, setComment] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [pending, setPending] = useState<TransitionAttachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const isApprovalStage = ![
     'Accountant',
@@ -33,10 +41,49 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
       <div className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-4 text-sm text-[rgb(var(--color-muted))]">
         Case is <strong>{status}</strong>. No further approval actions.
         {status === 'Approved' && currentStage === 'Lawyer' && (
-          <> Court filing is handled in Phase 4 (coming next).</>
+          <> Court filing is handled in the Lawyer panel below.</>
         )}
       </div>
     );
+  }
+
+  async function onPickFiles(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      const uploaded: TransitionAttachment[] = [];
+      for (const f of Array.from(files)) {
+        uploaded.push(await uploadTransitionAttachment(caseId, f));
+      }
+      setPending((p) => [...p, ...uploaded]);
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function removePending(id: number) {
+    try {
+      await deletePendingTransitionAttachment(caseId, id);
+      setPending((p) => p.filter((x) => x.id !== id));
+    } catch (e) {
+      setErr((e as Error).message);
+    }
+  }
+
+  function cancel() {
+    // Best-effort cleanup of any uploaded-but-unused files so we
+    // don't litter the storage dir when the user backs out.
+    pending.forEach((a) => {
+      void deletePendingTransitionAttachment(caseId, a.id).catch(() => undefined);
+    });
+    setPending([]);
+    setOpen(null);
+    setComment('');
+    setErr(null);
   }
 
   async function submitAction(a: Action) {
@@ -45,10 +92,15 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
     try {
       await api(`/api/v1/cases/${caseId}/transition`, {
         method: 'POST',
-        body: { action: a, comment },
+        body: {
+          action: a,
+          comment,
+          attachment_ids: pending.map((p) => p.id),
+        },
       });
       setOpen(null);
       setComment('');
+      setPending([]);
       onDone();
     } catch (e) {
       setErr((e as ApiError).message);
@@ -121,6 +173,59 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
               className="w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm focus:border-pug-gold-500 focus:outline-none"
             />
           </label>
+
+          <div className="rounded-md border border-dashed border-[rgb(var(--color-border))] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                <Paperclip className="h-3.5 w-3.5" /> Attachments (optional)
+              </span>
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={busy}
+                className="inline-flex items-center gap-1 rounded-md bg-pug-navy-700 px-2 py-1 text-xs font-semibold text-white hover:bg-pug-navy-600 disabled:opacity-50"
+              >
+                <Upload className="h-3.5 w-3.5" /> Add file
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => onPickFiles(e.target.files)}
+              />
+            </div>
+            {pending.length === 0 ? (
+              <div className="text-[11px] text-[rgb(var(--color-muted))]">
+                The next reviewer will see any files you attach here before they act.
+              </div>
+            ) : (
+              <ul className="space-y-1">
+                {pending.map((a) => (
+                  <li
+                    key={a.id}
+                    className="flex items-center justify-between gap-2 rounded bg-[rgb(var(--color-border))]/30 px-2 py-1 text-xs"
+                  >
+                    <span className="truncate">
+                      {a.original_filename}{' '}
+                      <span className="text-[10px] text-[rgb(var(--color-muted))]">
+                        ({formatBytes(a.size_bytes)})
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removePending(a.id)}
+                      className="text-rose-600 hover:text-rose-500"
+                      title="Remove"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+
           <div className="flex gap-2">
             <Btn
               variant={open === 'reject' ? 'red' : open === 'request_clarification' ? 'gold' : 'green'}
@@ -129,7 +234,7 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
             >
               Confirm {labelFor(open)}
             </Btn>
-            <Btn variant="ghost" onClick={() => setOpen(null)} disabled={busy}>
+            <Btn variant="ghost" onClick={cancel} disabled={busy}>
               Cancel
             </Btn>
           </div>

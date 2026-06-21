@@ -204,6 +204,47 @@ class CaseStatusUpdate(Base, TimestampMixin):
     comment: Mapped[str] = mapped_column(String(2000), default="")
 
     case: Mapped[Case] = relationship(back_populates="timeline")
+    attachments: Mapped[list["CaseTransitionAttachment"]] = relationship(
+        back_populates="transition",
+        cascade="all, delete-orphan",
+        order_by="CaseTransitionAttachment.id",
+        lazy="selectin",
+    )
+
+
+class CaseTransitionAttachment(Base, TimestampMixin):
+    """Files attached to an approval comment (Phase 19).
+
+    Uploaded in two phases: the user uploads files first, which creates
+    rows with ``transition_id = NULL``; submitting the transition then
+    binds the new ``CaseStatusUpdate`` row's ID into ``transition_id``
+    via the ``attachment_ids`` payload.
+    """
+
+    __tablename__ = "case_transition_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    case_id: Mapped[int] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transition_id: Mapped[int | None] = mapped_column(
+        ForeignKey("case_status_updates.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(
+        String(100), default="application/octet-stream"
+    )
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    uploaded_by_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    transition: Mapped[CaseStatusUpdate | None] = relationship(
+        back_populates="attachments"
+    )
 
 
 class CaseNoSequence(Base):

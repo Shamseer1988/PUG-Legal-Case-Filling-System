@@ -3,7 +3,14 @@
 from app.db.base import Base
 from app.models.audit import AuditLog
 from app.models.backup import BackupJob, RestoreJob
-from app.models.case import Case, CaseAttachment, CaseNoSequence, CaseStatusUpdate, Cheque
+from app.models.case import (
+    Case,
+    CaseAttachment,
+    CaseNoSequence,
+    CaseStatusUpdate,
+    CaseTransitionAttachment,
+    Cheque,
+)
 from app.models.closure import CaseClosure
 from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.masters import (
@@ -37,6 +44,7 @@ __all__ = [
     "CaseAttachment",
     "CaseNoSequence",
     "CaseStatusUpdate",
+    "CaseTransitionAttachment",
     "CourtFiling",
     "Hearing",
     "CashRequest",

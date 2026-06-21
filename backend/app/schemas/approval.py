@@ -8,6 +8,22 @@ from pydantic import BaseModel, ConfigDict, Field
 class TransitionRequest(BaseModel):
     action: str = Field(pattern="^(approve|reject|request_clarification|resubmit|comment)$")
     comment: str = ""
+    # IDs of pre-uploaded CaseTransitionAttachment rows to bind into
+    # the new CaseStatusUpdate row created by this transition.
+    attachment_ids: list[int] = Field(default_factory=list)
+
+
+class TransitionAttachmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    case_id: int
+    transition_id: int | None
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    uploaded_by_id: int
+    uploaded_by_name: str = ""
+    created_at: datetime
 
 
 class TimelineEntry(BaseModel):
@@ -22,6 +38,7 @@ class TimelineEntry(BaseModel):
     actor_name: str = ""
     comment: str
     created_at: datetime
+    attachments: list[TransitionAttachmentRead] = Field(default_factory=list)
 
 
 class InboxItem(BaseModel):

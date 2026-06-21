@@ -13,6 +13,7 @@ import { CourtFilingPanel } from '@/components/CourtFilingPanel';
 import { HearingsPanel } from '@/components/HearingsPanel';
 import { CashRequestsPanel } from '@/components/CashRequestsPanel';
 import { ClosurePanel } from '@/components/ClosurePanel';
+import { PreviousAttachmentsModal } from '@/components/PreviousAttachmentsModal';
 
 type ChequeDraft = {
   cheque_number: string;
@@ -311,6 +312,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       {/* Workflow controls (only after Draft -> Submitted) */}
       {isEdit && meta && meta.status !== 'Draft' && (
         <>
+          <PreviousAttachmentsModal caseId={meta.id} />
           <CaseTimeline
             caseId={meta.id}
             currentStage={meta.current_stage}

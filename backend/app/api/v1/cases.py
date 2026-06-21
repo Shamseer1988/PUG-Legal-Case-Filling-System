@@ -15,9 +15,18 @@ from sqlalchemy.orm import Session
 from app.core.deps import get_current_user, require_permission
 from app.core.permissions import CASES_CREATE, CASES_READ
 from app.db.session import get_db
-from app.models.case import CASE_STATUS_DRAFT, Case, CaseAttachment
+from app.models.case import (
+    CASE_STATUS_DRAFT,
+    Case,
+    CaseAttachment,
+    CaseTransitionAttachment,
+)
 from app.models.user import User
-from app.schemas.approval import TimelineEntry, TransitionRequest
+from app.schemas.approval import (
+    TimelineEntry,
+    TransitionAttachmentRead,
+    TransitionRequest,
+)
 from app.schemas.case import (
     AttachmentRead,
     CaseCreate,
@@ -145,6 +154,27 @@ def transition_case(
             status_code=403,
             detail=f"Not authorised to act at stage '{case.current_stage}'",
         )
+
+    # Validate attachment IDs before mutating the case so we don't
+    # leave a partially-bound transition on the timeline.
+    pending: list[CaseTransitionAttachment] = []
+    if payload.attachment_ids:
+        pending = (
+            db.query(CaseTransitionAttachment)
+            .filter(
+                CaseTransitionAttachment.id.in_(payload.attachment_ids),
+                CaseTransitionAttachment.case_id == case.id,
+                CaseTransitionAttachment.transition_id.is_(None),
+                CaseTransitionAttachment.uploaded_by_id == user.id,
+            )
+            .all()
+        )
+        if len(pending) != len(set(payload.attachment_ids)):
+            raise HTTPException(
+                status_code=400,
+                detail="One or more attachments are unknown, already bound, or owned by another user",
+            )
+
     try:
         if payload.action == "approve":
             case = workflow_service.approve(db, case, user, payload.comment)
@@ -158,6 +188,17 @@ def transition_case(
             raise HTTPException(status_code=400, detail=f"Unknown action: {payload.action}")
     except workflow_service.WorkflowError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Bind the freshly-created CaseStatusUpdate row to the user's
+    # pre-uploaded attachments. The transition we just executed is
+    # always the case's most-recent timeline entry.
+    if pending and case.timeline:
+        new_transition_id = case.timeline[-1].id
+        for att in pending:
+            att.transition_id = new_transition_id
+        db.commit()
+        db.refresh(case)
+
     return CaseRead.model_validate(case)
 
 
@@ -171,12 +212,29 @@ def case_timeline(
     from app.models.user import User as UserModel
 
     actor_ids = {t.actor_id for t in case.timeline}
+    for t in case.timeline:
+        for a in t.attachments:
+            actor_ids.add(a.uploaded_by_id)
     actors: dict[int, str] = {}
     if actor_ids:
         for u in db.query(UserModel).filter(UserModel.id.in_(actor_ids)).all():
             actors[u.id] = u.full_name
     out: list[TimelineEntry] = []
     for t in case.timeline:
+        attachments = [
+            TransitionAttachmentRead(
+                id=a.id,
+                case_id=a.case_id,
+                transition_id=a.transition_id,
+                original_filename=a.original_filename,
+                mime_type=a.mime_type,
+                size_bytes=a.size_bytes,
+                uploaded_by_id=a.uploaded_by_id,
+                uploaded_by_name=actors.get(a.uploaded_by_id, ""),
+                created_at=a.created_at,
+            )
+            for a in t.attachments
+        ]
         out.append(
             TimelineEntry(
                 id=t.id,
@@ -189,6 +247,7 @@ def case_timeline(
                 actor_name=actors.get(t.actor_id, ""),
                 comment=t.comment,
                 created_at=t.created_at,
+                attachments=attachments,
             )
         )
     return out
@@ -358,6 +417,106 @@ def download_attachments_zip(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+# ----------------- Transition (approval-comment) attachments -----------------
+@router.post(
+    "/{case_id}/transition-attachments",
+    response_model=TransitionAttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_transition_attachment(
+    case_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TransitionAttachmentRead:
+    """Stage a file to bind to the next transition this user submits.
+
+    The file is stored unbound (``transition_id = NULL``) and is
+    associated with the new ``CaseStatusUpdate`` row when the user
+    POSTs ``/transition`` with the returned attachment ID.
+    """
+    case = _get_case_or_404(db, user, case_id)
+    if not workflow_service.can_act(user, case):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Not authorised to act at stage '{case.current_stage}'",
+        )
+    stored, size = storage.save_transition_attachment(case.id, file)
+    att = CaseTransitionAttachment(
+        case_id=case.id,
+        transition_id=None,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size,
+        uploaded_by_id=user.id,
+    )
+    db.add(att)
+    db.commit()
+    db.refresh(att)
+    return TransitionAttachmentRead(
+        id=att.id,
+        case_id=att.case_id,
+        transition_id=att.transition_id,
+        original_filename=att.original_filename,
+        mime_type=att.mime_type,
+        size_bytes=att.size_bytes,
+        uploaded_by_id=att.uploaded_by_id,
+        uploaded_by_name=user.full_name,
+        created_at=att.created_at,
+    )
+
+
+@router.get(
+    "/{case_id}/transition-attachments/{att_id}/download",
+)
+def download_transition_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseTransitionAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_transition_attachment_path(case.id, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+    )
+
+
+@router.delete(
+    "/{case_id}/transition-attachments/{att_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_transition_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Cancel a pending (unbound) attachment. Bound attachments are
+    immutable since they're part of the case's permanent audit trail."""
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseTransitionAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if att.transition_id is not None:
+        raise HTTPException(
+            status_code=400, detail="Cannot delete an attachment already bound to a transition"
+        )
+    if att.uploaded_by_id != user.id and not user.is_super:
+        raise HTTPException(status_code=403, detail="Not your attachment")
+    storage.delete_transition_attachment(case.id, att.stored_filename)
+    db.delete(att)
+    db.commit()
 
 
 # ----------------- Closure -----------------

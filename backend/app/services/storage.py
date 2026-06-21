@@ -119,3 +119,41 @@ def delete_case_dir(case_id: int) -> None:
     d = settings.storage_path / CASES_SUBDIR / str(case_id)
     if d.exists():
         shutil.rmtree(d, ignore_errors=True)
+
+
+# ---- Transition attachments (Phase 19) ----
+TRANSITIONS_SUBDIR = "transitions"
+
+
+def _transition_dir(case_id: int) -> Path:
+    p = settings.storage_path / CASES_SUBDIR / str(case_id) / TRANSITIONS_SUBDIR
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def save_transition_attachment(case_id: int, upload: UploadFile) -> tuple[str, int]:
+    """Stream-save an approval-comment file. Returns (stored_filename, size_bytes)."""
+    original = upload.filename or "file"
+    ext = Path(original).suffix
+    stored = f"{uuid.uuid4().hex}{ext}"
+    target = _transition_dir(case_id) / stored
+
+    size = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            out.write(chunk)
+    return stored, size
+
+
+def get_transition_attachment_path(case_id: int, stored_filename: str) -> Path:
+    return _transition_dir(case_id) / stored_filename
+
+
+def delete_transition_attachment(case_id: int, stored_filename: str) -> None:
+    p = get_transition_attachment_path(case_id, stored_filename)
+    if p.exists():
+        p.unlink()
