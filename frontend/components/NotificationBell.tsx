@@ -1,27 +1,27 @@
 'use client';
 
-import { Bell, Check, CheckCheck } from 'lucide-react';
+import { Bell, Check, CheckCheck, Wifi, WifiOff } from 'lucide-react';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import {
+  openNotificationStream,
+  type SseNotification,
+} from '@/lib/notificationStream';
 
-type Note = {
-  id: number;
-  title: string;
-  body: string;
-  link: string;
-  event: string;
-  related_case_id: number | null;
-  is_read: boolean;
-  read_at: string | null;
-  created_at: string;
-};
+type Note = SseNotification;
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<Note[]>([]);
   const [unread, setUnread] = useState(0);
+  // 'sse' = real-time stream is healthy, 'poll' = fell back to 30s
+  // polling because SSE failed (proxy stripping the stream, network
+  // hiccup that exhausted reconnects). The icon next to the bell
+  // surfaces this so an operator can spot a degraded environment.
+  const [mode, setMode] = useState<'sse' | 'poll'>('sse');
   const ref = useRef<HTMLDivElement>(null);
+  const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadCount = useCallback(async () => {
     try {
@@ -40,10 +40,33 @@ export function NotificationBell() {
     }
   }
 
+  // Open SSE on mount; on fatal failure, fall back to 30s polling
+  // so the bell still works behind a proxy that drops text/event-stream.
   useEffect(() => {
+    let stream = openNotificationStream({
+      onHello: ({ unread }) => setUnread(unread),
+      onUnread: ({ unread }) => setUnread(unread),
+      onNotification: (note) => {
+        setUnread((u) => u + (note.is_read ? 0 : 1));
+        // Prepend to the dropdown list (cap at 50 in memory)
+        setItems((arr) => [note, ...arr.filter((x) => x.id !== note.id)].slice(0, 50));
+      },
+      onFatal: () => {
+        setMode('poll');
+        loadCount();
+        pollTimer.current = setInterval(loadCount, 30_000);
+      },
+    });
+
+    // Belt-and-braces: load count once on mount in case the SSE
+    // ticket takes a moment to issue or the user opens the bell
+    // before the hello event lands.
     loadCount();
-    const t = setInterval(loadCount, 30_000);
-    return () => clearInterval(t);
+
+    return () => {
+      stream.close();
+      if (pollTimer.current) clearInterval(pollTimer.current);
+    };
   }, [loadCount]);
 
   useEffect(() => {
@@ -61,7 +84,7 @@ export function NotificationBell() {
   async function markOne(n: Note) {
     await api(`/api/v1/notifications/${n.id}/read`, { method: 'POST' });
     setItems((arr) => arr.map((x) => (x.id === n.id ? { ...x, is_read: true } : x)));
-    loadCount();
+    setUnread((u) => Math.max(0, u - 1));
   }
 
   async function markAll() {
@@ -89,7 +112,32 @@ export function NotificationBell() {
       {open && (
         <div className="absolute right-0 top-11 z-30 w-[24rem] max-w-[90vw] rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] shadow-xl">
           <div className="flex items-center justify-between border-b border-[rgb(var(--color-border))] px-3 py-2">
-            <div className="text-sm font-semibold">Notifications</div>
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              Notifications
+              <span
+                title={
+                  mode === 'sse'
+                    ? 'Real-time stream connected'
+                    : 'Fell back to 30s polling (SSE unavailable)'
+                }
+                className={
+                  'inline-flex items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ' +
+                  (mode === 'sse'
+                    ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+                    : 'bg-amber-500/15 text-amber-700 dark:text-amber-300')
+                }
+              >
+                {mode === 'sse' ? (
+                  <>
+                    <Wifi className="h-2.5 w-2.5" /> Live
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="h-2.5 w-2.5" /> Polling
+                  </>
+                )}
+              </span>
+            </div>
             {unread > 0 && (
               <button
                 onClick={markAll}

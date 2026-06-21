@@ -36,6 +36,20 @@ def create_refresh_token(subject: str | int) -> str:
     return jwt.encode(payload, settings.app_secret_key, algorithm=settings.jwt_algorithm)
 
 
+def create_stream_ticket(subject: str | int, ttl_seconds: int = 60) -> str:
+    """Issue a short-lived JWT for an SSE / WebSocket connection.
+
+    The browser's ``EventSource`` API cannot attach a custom
+    ``Authorization`` header, so we hand out a single-purpose
+    ticket the client sends as a query-string parameter instead.
+    The TTL is tiny (60s by default) so leaking a ticket via a
+    proxy log only opens a 60-second window.
+    """
+    expire = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
+    payload = {"sub": str(subject), "type": "stream", "exp": expire}
+    return jwt.encode(payload, settings.app_secret_key, algorithm=settings.jwt_algorithm)
+
+
 def decode_token(token: str) -> dict[str, Any]:
     try:
         return jwt.decode(token, settings.app_secret_key, algorithms=[settings.jwt_algorithm])

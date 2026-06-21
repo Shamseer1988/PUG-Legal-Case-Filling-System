@@ -13,6 +13,7 @@ from app.core.permissions import capabilities_for_role
 from app.core.security import (
     create_access_token,
     create_refresh_token,
+    create_stream_ticket,
     decode_token,
     hash_password,
     verify_password,
@@ -130,6 +131,20 @@ def me(user: User = Depends(get_current_user)) -> MeResponse:
         totp_enabled=user.totp_enabled,
         has_signature=bool(user.signature_path),
     )
+
+
+@router.post("/stream-ticket")
+def issue_stream_ticket(user: User = Depends(get_current_user)) -> dict:
+    """Phase 26: hand out a 60-second JWT scoped to streaming.
+
+    The browser's EventSource API can't send an Authorization
+    header, so the SSE endpoint authenticates via this short-lived
+    ticket passed as a query parameter instead.
+    """
+    return {
+        "ticket": create_stream_ticket(user.id, ttl_seconds=60),
+        "ttl_seconds": 60,
+    }
 
 
 @router.get("/me/capabilities", response_model=CapabilitiesResponse)
