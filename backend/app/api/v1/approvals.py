@@ -15,14 +15,36 @@ router = APIRouter(prefix="/approvals", tags=["approvals"])
 
 @router.get("/inbox", response_model=list[InboxItem])
 def inbox(
+    scope: str = "all",
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[InboxItem]:
+    """Cases waiting for action.
+
+    ``scope`` is one of:
+      - ``all`` (default): every case the user could act on at its
+        current stage, including ones assigned to a teammate.
+      - ``mine``: only cases where the user is explicitly listed in
+        the signatory slot for the current stage (e.g.
+        ``sales_manager_id == user.id`` when stage = Sales Manager).
+        Clarification-requested cases authored by the user are also
+        included so they can be re-submitted.
+    """
     cases = workflow_service.inbox_for(db, user)
     out: list[InboxItem] = []
     for c in cases:
         user_field = workflow_service.assigned_user_field_for(c)
         assigned_to_me = bool(user_field) and getattr(c, user_field) == user.id  # type: ignore[arg-type]
+        # Clarification-requested cases the user authored count as
+        # "mine" too - they're the ones expected to resubmit.
+        if (
+            not assigned_to_me
+            and c.status == "Clarification Requested"
+            and c.created_by_id == user.id
+        ):
+            assigned_to_me = True
+        if scope == "mine" and not assigned_to_me:
+            continue
         out.append(
             InboxItem(
                 id=c.id,

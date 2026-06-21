@@ -19,44 +19,57 @@ type Item = {
   assigned_to_me: boolean;
 };
 
+type Scope = 'all' | 'mine';
+
 export default function ApprovalsInboxPage() {
   const [rows, setRows] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
-  const [showMine, setShowMine] = useState(false);
+  const [scope, setScope] = useState<Scope>('all');
 
   useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr(null);
     (async () => {
       try {
-        setRows(await api<Item[]>('/api/v1/approvals/inbox'));
+        const data = await api<Item[]>(
+          scope === 'mine'
+            ? '/api/v1/approvals/inbox?scope=mine'
+            : '/api/v1/approvals/inbox',
+        );
+        if (!cancelled) setRows(data);
       } catch (e) {
-        setErr((e as ApiError).message);
+        if (!cancelled) setErr((e as ApiError).message);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, []);
-
-  const visible = showMine ? rows.filter((r) => r.assigned_to_me) : rows;
+    return () => {
+      cancelled = true;
+    };
+  }, [scope]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Approvals Inbox</h1>
-          <p className="text-xs text-[rgb(var(--color-muted))]">
-            Cases waiting for action at your stage.
-          </p>
-        </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={showMine}
-            onChange={(e) => setShowMine(e.target.checked)}
-            className="h-4 w-4"
-          />
-          Assigned to me only
-        </label>
+      <div>
+        <h1 className="text-xl font-semibold">Approvals Inbox</h1>
+        <p className="text-xs text-[rgb(var(--color-muted))]">
+          Cases waiting for action at your stage.
+        </p>
+      </div>
+
+      {/* Scope tabs: filter is now server-side so an empty "Assigned
+          to me" tab means the user genuinely has nothing waiting
+          rather than the client having silently dropped rows. */}
+      <div className="inline-flex rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-1 shadow-soft">
+        <Tab active={scope === 'all'} onClick={() => setScope('all')}>
+          All open
+        </Tab>
+        <Tab active={scope === 'mine'} onClick={() => setScope('mine')}>
+          <UserCheck className="mr-1 inline h-3.5 w-3.5" />
+          Assigned to me
+        </Tab>
       </div>
 
       {err && (
@@ -85,14 +98,16 @@ export default function ApprovalsInboxPage() {
                   Loading...
                 </td>
               </tr>
-            ) : visible.length === 0 ? (
+            ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-10 text-center text-[rgb(var(--color-muted))]">
-                  Inbox is clear.
+                  {scope === 'mine'
+                    ? 'Nothing assigned to you right now.'
+                    : 'Inbox is clear.'}
                 </td>
               </tr>
             ) : (
-              visible.map((r) => (
+              rows.map((r) => (
                 <tr key={r.id} className="border-t border-[rgb(var(--color-border))]">
                   <td className="px-4 py-2 font-mono text-xs">
                     {r.case_no}
@@ -144,5 +159,29 @@ export default function ApprovalsInboxPage() {
         </table>
       </div>
     </div>
+  );
+}
+
+function Tab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded px-3 py-1.5 text-sm font-semibold transition-colors ${
+        active
+          ? 'bg-pug-gold-500 text-pug-navy-800'
+          : 'text-[rgb(var(--color-muted))] hover:bg-[rgb(var(--color-border))]/40'
+      }`}
+    >
+      {children}
+    </button>
   );
 }

@@ -449,7 +449,14 @@ def inbox_for(db: Session, user: User) -> list[Case]:
 
 
 def is_overdue(case: Case) -> bool:
-    return bool(case.sla_due_at and case.sla_due_at < _utcnow())
+    due = case.sla_due_at
+    if not due:
+        return False
+    # SQLite hands back naive datetimes; assume UTC so the comparison
+    # with the aware ``_utcnow()`` doesn't raise.
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=timezone.utc)
+    return due < _utcnow()
 
 
 def assigned_user_field_for(case: Case) -> str | None:

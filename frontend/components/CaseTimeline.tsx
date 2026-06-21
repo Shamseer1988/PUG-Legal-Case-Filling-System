@@ -1,12 +1,25 @@
 'use client';
 
-import { Check, Circle, AlertTriangle, Download, MessageSquare, Paperclip, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  ArrowRight,
+  Check,
+  Circle,
+  Download,
+  Gavel,
+  Lock,
+  MessageSquare,
+  Paperclip,
+  Send,
+  X,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import {
   downloadTransitionAttachment,
   formatBytes,
   type TimelineEntry,
+  type TransitionAttachment,
 } from '@/lib/transitionAttachments';
 
 type Stage = {
@@ -64,7 +77,7 @@ export function CaseTimeline({ caseId, currentStage, status }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Flow strip */}
+      {/* Top flow strip - the stage-by-stage state of the workflow */}
       <div className="overflow-x-auto">
         <div className="flex min-w-max items-center gap-2 rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-3 shadow-soft">
           {flow.map((stage, i) => {
@@ -97,55 +110,26 @@ export function CaseTimeline({ caseId, currentStage, status }: Props) {
         </div>
       </div>
 
-      {/* Entry log */}
-      <div className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] shadow-soft">
-        <div className="border-b border-[rgb(var(--color-border))] px-4 py-2 text-xs font-semibold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-400">
+      {/* History as a workflow chart - vertical stepper, one card per
+          recorded transition. Replaces the previous tabular log. */}
+      <div className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-4 shadow-soft">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-400">
           History
         </div>
         {entries.length === 0 ? (
-          <div className="px-4 py-3 text-sm text-[rgb(var(--color-muted))]">
+          <div className="text-sm text-[rgb(var(--color-muted))]">
             No actions recorded yet.
           </div>
         ) : (
-          <ol className="divide-y divide-[rgb(var(--color-border))]">
-            {entries.map((e) => {
-              const Icon = entryIcon(e.action_type);
-              return (
-                <li key={e.id} className="flex gap-3 px-4 py-3 text-sm">
-                  <div
-                    className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${entryColor(
-                      e.action_type,
-                    )}`}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-baseline gap-2">
-                      <span className="font-semibold">{labelFor(e.action_type)}</span>
-                      <span className="text-xs text-[rgb(var(--color-muted))]">
-                        {e.from_stage} {arrowFor(e.action_type)} {e.to_stage} &middot;{' '}
-                        {e.actor_name || `User #${e.actor_id}`} &middot;{' '}
-                        {new Date(e.created_at).toLocaleString()}
-                      </span>
-                    </div>
-                    {e.comment && (
-                      <div className="mt-1 whitespace-pre-wrap rounded-md bg-[rgb(var(--color-border))]/30 px-2 py-1 text-xs">
-                        {e.comment}
-                      </div>
-                    )}
-                    {e.attachments.length > 0 && (
-                      <ul className="mt-2 space-y-1">
-                        {e.attachments.map((a) => (
-                          <li key={a.id}>
-                            <AttachmentLink caseId={caseId} attachment={a} />
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </li>
-              );
-            })}
+          <ol className="relative ml-3 border-l-2 border-dashed border-[rgb(var(--color-border))] pl-6">
+            {entries.map((e, idx) => (
+              <HistoryCard
+                key={e.id}
+                entry={e}
+                caseId={caseId}
+                isLast={idx === entries.length - 1}
+              />
+            ))}
           </ol>
         )}
       </div>
@@ -153,20 +137,73 @@ export function CaseTimeline({ caseId, currentStage, status }: Props) {
   );
 }
 
-function AttachmentLink({
+function HistoryCard({
+  entry,
+  caseId,
+  isLast,
+}: {
+  entry: TimelineEntry;
+  caseId: number;
+  isLast: boolean;
+}) {
+  const Icon = entryIcon(entry.action_type);
+  const dotColor = dotBg(entry.action_type);
+  const cardAccent = cardAccentColor(entry.action_type);
+  return (
+    <li className={`relative ${isLast ? '' : 'pb-5'}`}>
+      {/* Connector dot positioned ON the vertical line */}
+      <span
+        className={`absolute -left-[33px] flex h-7 w-7 items-center justify-center rounded-full border-2 border-[rgb(var(--color-card))] ${dotColor} shadow`}
+      >
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+
+      <div
+        className={`rounded-lg border bg-[rgb(var(--color-bg))] p-3 ${cardAccent}`}
+      >
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold">{labelFor(entry.action_type)}</span>
+          <span className="inline-flex items-center gap-1 rounded-md bg-[rgb(var(--color-border))]/40 px-2 py-0.5 font-mono text-[10px]">
+            {entry.from_stage} <ArrowRight className="h-3 w-3" /> {entry.to_stage}
+          </span>
+          <span className="ml-auto text-[10px] text-[rgb(var(--color-muted))]">
+            {new Date(entry.created_at).toLocaleString()}
+          </span>
+        </div>
+        <div className="mt-1 text-xs text-[rgb(var(--color-muted))]">
+          by <strong>{entry.actor_name || `User #${entry.actor_id}`}</strong>
+        </div>
+        {entry.comment && (
+          <div className="mt-2 whitespace-pre-wrap rounded-md bg-[rgb(var(--color-border))]/30 px-2 py-1.5 text-xs">
+            {entry.comment}
+          </div>
+        )}
+        {entry.attachments.length > 0 && (
+          <ul className="mt-2 flex flex-wrap gap-1.5">
+            {entry.attachments.map((a) => (
+              <li key={a.id}>
+                <AttachmentChip caseId={caseId} attachment={a} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function AttachmentChip({
   caseId,
   attachment,
 }: {
   caseId: number;
-  attachment: import('@/lib/transitionAttachments').TransitionAttachment;
+  attachment: TransitionAttachment;
 }) {
   const [busy, setBusy] = useState(false);
   async function open() {
     setBusy(true);
     try {
       const { url } = await downloadTransitionAttachment(caseId, attachment.id);
-      // Trigger download via temp anchor so the browser uses the
-      // original filename instead of the blob: URL hash.
       const a = document.createElement('a');
       a.href = url;
       a.download = attachment.original_filename;
@@ -174,7 +211,6 @@ function AttachmentLink({
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      // Revoke after a tick so the navigation has a chance to start.
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     } finally {
       setBusy(false);
@@ -184,7 +220,7 @@ function AttachmentLink({
     <button
       onClick={open}
       disabled={busy}
-      className="inline-flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--color-border))]/40 disabled:opacity-50"
+      className="inline-flex items-center gap-1.5 rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--color-border))]/40 disabled:opacity-50"
     >
       <Paperclip className="h-3 w-3 text-pug-gold-700 dark:text-pug-gold-400" />
       <span className="font-medium">{attachment.original_filename}</span>
@@ -208,6 +244,12 @@ function labelFor(a: string): string {
       return 'Requested Clarification';
     case 'resubmit':
       return 'Resubmitted';
+    case 'lawyer_approve':
+      return 'Lawyer Approved';
+    case 'court_filed':
+      return 'Court Filed';
+    case 'closed':
+      return 'Closed';
     case 'comment':
       return 'Comment';
     default:
@@ -215,23 +257,43 @@ function labelFor(a: string): string {
   }
 }
 
-function arrowFor(a: string): string {
-  if (a === 'reject') return 'X';
-  return '->';
-}
-
-function entryColor(a: string): string {
+function dotBg(a: string): string {
   switch (a) {
     case 'approve':
     case 'submit':
     case 'resubmit':
-      return 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300';
+    case 'lawyer_approve':
+      return 'bg-emerald-500 text-white';
     case 'reject':
-      return 'bg-rose-500/20 text-rose-700 dark:text-rose-300';
+      return 'bg-rose-500 text-white';
     case 'request_clarification':
-      return 'bg-pug-gold-500/20 text-pug-gold-700 dark:text-pug-gold-300';
+      return 'bg-pug-gold-500 text-pug-navy-800';
+    case 'court_filed':
+      return 'bg-pug-navy-600 text-white';
+    case 'closed':
+      return 'bg-slate-700 text-white';
     default:
-      return 'bg-slate-500/20 text-slate-700 dark:text-slate-300';
+      return 'bg-[rgb(var(--color-border))] text-[rgb(var(--color-muted))]';
+  }
+}
+
+function cardAccentColor(a: string): string {
+  switch (a) {
+    case 'approve':
+    case 'submit':
+    case 'resubmit':
+    case 'lawyer_approve':
+      return 'border-emerald-500/30';
+    case 'reject':
+      return 'border-rose-500/30';
+    case 'request_clarification':
+      return 'border-pug-gold-500/40';
+    case 'court_filed':
+      return 'border-pug-navy-500/40';
+    case 'closed':
+      return 'border-slate-500/30';
+    default:
+      return 'border-[rgb(var(--color-border))]';
   }
 }
 
@@ -245,6 +307,12 @@ function entryIcon(a: string) {
       return X;
     case 'request_clarification':
       return AlertTriangle;
+    case 'lawyer_approve':
+      return Gavel;
+    case 'court_filed':
+      return Send;
+    case 'closed':
+      return Lock;
     default:
       return MessageSquare;
   }
