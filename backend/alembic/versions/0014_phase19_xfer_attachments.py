@@ -1,15 +1,20 @@
 """Phase 19: per-transition approval-comment attachments.
 
-Revision ID: 0014_phase19_transition_attachments
+Revision ID: 0014_phase19_xfer_atts
 Revises: 0013_phase18_signature
 Create Date: 2026-06-20
+
+Note: the revision id is intentionally short. Postgres's default
+``alembic_version.version_num`` column is ``VARCHAR(32)``; longer
+ids silently break the upgrade because the row update fails after
+the DDL has already run.
 """
 from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0014_phase19_transition_attachments"
+revision: str = "0014_phase19_xfer_atts"
 down_revision: str | None = "0013_phase18_signature"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None

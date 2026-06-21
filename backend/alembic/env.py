@@ -2,6 +2,7 @@
 
 from logging.config import fileConfig
 
+import sqlalchemy as sa
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
@@ -17,6 +18,13 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Alembic's default ``alembic_version.version_num`` is VARCHAR(32),
+# which silently breaks any migration whose revision id is longer
+# than that (the DDL succeeds, the version-row update fails, Postgres
+# rolls the whole batch back). VARCHAR(64) buys us long descriptive
+# revision ids without that footgun.
+VERSION_NUM_COLUMN_TYPE = sa.String(64)
+
 
 def run_migrations_offline() -> None:
     context.configure(
@@ -25,6 +33,7 @@ def run_migrations_offline() -> None:
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
         compare_type=True,
+        version_table_column_type=VERSION_NUM_COLUMN_TYPE,
     )
     with context.begin_transaction():
         context.run_migrations()
@@ -39,6 +48,7 @@ def run_migrations_online() -> None:
             connection=connection,
             target_metadata=target_metadata,
             compare_type=True,
+            version_table_column_type=VERSION_NUM_COLUMN_TYPE,
         )
         with context.begin_transaction():
             context.run_migrations()
