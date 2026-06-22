@@ -34,3 +34,25 @@ class VerifyResult(BaseModel):
     count: int
     issues: list[dict[str, Any]]
     checked_at: str
+
+
+class CaseViewItem(BaseModel):
+    """Phase 30 - one row per case view, dedup'd within 5 minutes
+    by case_views.record_view."""
+
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    case_id: int
+    user_id: int | None
+    viewed_at: datetime
+    ip_address: str
+    user_email: str = ""
+    user_full_name: str = ""
+
+
+class SignedExportInfo(BaseModel):
+    """Returned by GET /audit-log/signing-key. The base64 PEM-wrapped
+    public half of the Ed25519 keypair used to sign audit exports."""
+
+    public_key: str
+    format: str

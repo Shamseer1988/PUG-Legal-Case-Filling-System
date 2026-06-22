@@ -50,8 +50,15 @@ def _compute_hash(prev_hash: str, payload: dict[str, Any]) -> str:
 
 
 def _hash_payload(row: AuditLog) -> dict[str, Any]:
+    # SQLite drops tzinfo on round-trip while Postgres preserves it.
+    # Normalise to a tz-aware UTC ISO string so the hash computed at
+    # insert-time matches the hash recomputed by verify_chain on any
+    # backend.
+    ts = row.created_at
+    if ts is not None and ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
     return {
-        "created_at": row.created_at.isoformat() if row.created_at else "",
+        "created_at": ts.isoformat() if ts else "",
         "actor_id": row.actor_id,
         "actor_email": row.actor_email,
         "action": row.action,

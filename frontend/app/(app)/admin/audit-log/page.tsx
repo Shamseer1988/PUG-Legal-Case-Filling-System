@@ -6,6 +6,8 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
+  Key,
+  Lock,
   RefreshCw,
   X,
 } from 'lucide-react';
@@ -100,7 +102,7 @@ export default function AuditLogPage() {
     }
   }
 
-  async function download(format: 'csv' | 'pdf') {
+  async function download(format: 'csv' | 'pdf' | 'signed.json') {
     const r = await fetch(`${API_BASE}/api/v1/audit-log.${format}?${qs}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     });
@@ -115,6 +117,23 @@ export default function AuditLogPage() {
     a.download = `audit-log.${format}`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function showSigningKey() {
+    try {
+      const r = await api<{ public_key: string; format: string }>(
+        '/api/v1/audit-log/signing-key',
+      );
+      // Surface as a copy-friendly alert dialog. A future iteration
+      // can render this in a proper modal with a "Copy" button.
+      window.prompt(
+        `Public key (${r.format}). Hand this to your external auditor `
+          + 'so they can verify any later signed export. Cmd/Ctrl-C to copy:',
+        r.public_key,
+      );
+    } catch (e) {
+      setErr((e as ApiError).message);
+    }
   }
 
   return (
@@ -144,6 +163,20 @@ export default function AuditLogPage() {
             className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
           >
             <FileText className="h-4 w-4" /> PDF
+          </button>
+          <button
+            onClick={() => download('signed.json')}
+            title="Tamper-evident JSON export signed with Ed25519"
+            className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
+          >
+            <Lock className="h-4 w-4" /> Signed JSON
+          </button>
+          <button
+            onClick={showSigningKey}
+            title="Get the Ed25519 public key for offline verification"
+            className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
+          >
+            <Key className="h-4 w-4" /> Signing Key
           </button>
           <button
             onClick={load}

@@ -11,6 +11,7 @@ from app.models.case import (
     CaseTransitionAttachment,
     Cheque,
 )
+from app.models.case_view import CaseView
 from app.models.closure import CaseClosure
 from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.masters import (
@@ -42,6 +43,7 @@ __all__ = [
     "CaseType",
     "Case",
     "Cheque",
+    "CaseView",
     "CaseAttachment",
     "CaseNoSequence",
     "CaseStatusUpdate",

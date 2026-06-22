@@ -296,7 +296,14 @@ def get_case(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(CASES_READ)),
 ) -> CaseRead:
-    return CaseRead.model_validate(_get_case_or_404(db, user, case_id))
+    case = _get_case_or_404(db, user, case_id)
+    # Phase 30: log who's reading this case for forensic queries.
+    # case_views.record_view dedups within COALESCE_SECONDS so
+    # rapid polls don't spam the audit table.
+    from app.services import case_views
+
+    case_views.record_view(db, case.id, user)
+    return CaseRead.model_validate(case)
 
 
 @router.patch("/{case_id}", response_model=CaseRead)
