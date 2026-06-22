@@ -97,6 +97,25 @@ def _emit(
     except Exception as exc:  # pragma: no cover - defensive
         logger.warning("queue_email failed for {} ({}): {}", user.email, event, exc)
 
+    # Phase 32: fire a web push too. Best-effort; subscription
+    # failures must never block the workflow that triggered us.
+    try:
+        from app.services import push_service
+
+        push_service.send_to_user(
+            db,
+            user_id=user.id,
+            payload={
+                "title": title,
+                "body": body or (lines[0] if lines else ""),
+                "url": link,
+                "event": event,
+                "case_id": related_case_id,
+            },
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning("push send failed for user {} ({}): {}", user.id, event, exc)
+
 
 def _case_facts(case: Case) -> list[tuple[str, str]]:
     return [

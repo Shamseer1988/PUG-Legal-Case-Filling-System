@@ -24,6 +24,7 @@ from app.models.masters import (
     Salesman,
 )
 from app.models.notification import EmailLog, EmailLogAttachment, Notification
+from app.models.push import PushSubscription
 from app.models.saved_filter import SavedReportFilter
 from app.models.scheduled_report import ScheduledReport, ScheduledReportRun
 from app.models.settings import SettingsKV
@@ -55,6 +56,7 @@ __all__ = [
     "Notification",
     "EmailLog",
     "EmailLogAttachment",
+    "PushSubscription",
     "ScheduledReport",
     "ScheduledReportRun",
     "SavedReportFilter",

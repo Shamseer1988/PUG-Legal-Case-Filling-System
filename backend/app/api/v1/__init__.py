@@ -16,6 +16,7 @@ from app.api.v1 import (
     health,
     masters,
     notifications,
+    push,
     reports,
     roles,
     saved_filters,
@@ -37,6 +38,7 @@ api_router.include_router(court.cases_router)
 api_router.include_router(court.cash_router)
 api_router.include_router(court.hearings_router)
 api_router.include_router(notifications.router)
+api_router.include_router(push.router)
 api_router.include_router(email_log.router)
 api_router.include_router(saved_filters.router)
 api_router.include_router(reports.router)

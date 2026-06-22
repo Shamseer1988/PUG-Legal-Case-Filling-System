@@ -2,6 +2,7 @@
 
 import { CheckCircle2, Globe, KeyRound, PenLine, ShieldCheck, ShieldOff, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { PushOptInCard } from '@/components/PushOptInCard';
 import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore, type Me } from '@/lib/auth';
 import {
@@ -439,6 +440,9 @@ export default function ProfilePage() {
           })}
         </div>
       </section>
+
+      {/* -------- Push Notifications (Phase 32) -------- */}
+      <PushOptInCard />
 
       {/* -------- Signature -------- */}
       <section className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-5 shadow-soft">
