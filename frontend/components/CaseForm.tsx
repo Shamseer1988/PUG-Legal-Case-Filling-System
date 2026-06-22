@@ -1,6 +1,6 @@
 'use client';
 
-import { Plus, Trash2, Save, Send, Printer, Paperclip, X } from 'lucide-react';
+import { Plus, Trash2, Save, Send, Printer } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
@@ -15,8 +15,13 @@ import { CashRequestsPanel } from '@/components/CashRequestsPanel';
 import { ClosurePanel } from '@/components/ClosurePanel';
 import { PreviousAttachmentsModal } from '@/components/PreviousAttachmentsModal';
 import { SignedFormPanel } from '@/components/SignedFormPanel';
+import { CategorizedAttachments } from '@/components/CategorizedAttachments';
+import { ChequeAttachmentButton } from '@/components/ChequeAttachmentButton';
 
 type ChequeDraft = {
+  // The DB row id, set after the case has been saved at least once.
+  // Required for cheque-level attachment uploads.
+  id?: number;
   cheque_number: string;
   bank_id: number | null;
   bank_name_text: string;
@@ -31,7 +36,6 @@ type CaseDraft = {
   division_id: number | null;
   salesman_id: number | null;
   bank_id: number | null;
-  case_type_id: number | null;
   customer_type: string;
   actual_due_amount: string;
   legal_filing_amount: string;
@@ -82,7 +86,6 @@ const EMPTY_CASE: CaseDraft = {
   division_id: null,
   salesman_id: null,
   bank_id: null,
-  case_type_id: null,
   customer_type: 'Retail',
   actual_due_amount: '',
   legal_filing_amount: '',
@@ -109,7 +112,6 @@ export function CaseForm({ caseId }: { caseId?: number }) {
   const divisions = useMasterOptions('/api/v1/masters/divisions', 'name');
   const salesmen = useMasterOptions('/api/v1/masters/salesmen', 'name');
   const banks = useMasterOptions('/api/v1/masters/banks', 'name');
-  const caseTypes = useMasterOptions('/api/v1/masters/case-types', 'name');
   const lawyers = useMasterOptions('/api/v1/masters/lawyers', 'name');
 
   const [draft, setDraft] = useState<CaseDraft>(EMPTY_CASE);
@@ -213,7 +215,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       deposit_date: draft.deposit_date || null,
       cheques: draft.cheques
         .filter((c) => c.cheque_number.trim())
-        .map((c) => ({
+        .map(({ id: _id, ...c }) => ({
           ...c,
           amount: c.amount || '0',
           cheque_date: c.cheque_date || null,
@@ -380,17 +382,6 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             }}
             disabled={locked}
           />
-          <div className="ml-auto w-64">
-            <Field label="Case Type">
-              <Select
-                value={draft.case_type_id}
-                options={caseTypes}
-                allowEmpty
-                onChange={(v) => up('case_type_id', v)}
-                disabled={locked}
-              />
-            </Field>
-          </div>
         </div>
       </Card>
 
@@ -504,16 +495,34 @@ export function CaseForm({ caseId }: { caseId?: number }) {
         <div className="space-y-3">
           {draft.cheques.map((c, i) => (
             <div
-              key={i}
-              className="grid grid-cols-1 gap-3 rounded-lg border border-[rgb(var(--color-border))] p-3 md:grid-cols-7"
+              key={c.id ?? `new-${i}`}
+              className="grid grid-cols-[auto_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] items-end gap-3 rounded-lg border border-[rgb(var(--color-border))] p-3"
             >
-              <Field label="#" small>
-                <input
-                  readOnly
-                  value={i + 1}
-                  className={inputCls + ' bg-[rgb(var(--color-border))]/30 text-center'}
+              <div className="flex flex-col items-center gap-1">
+                <div className="text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                  #{i + 1}
+                </div>
+                <ChequeAttachmentButton
+                  caseId={meta?.id ?? null}
+                  chequeId={c.id ?? null}
+                  disabled={locked}
+                  onAutoFill={(ocr) => {
+                    if (!ocr.success) return;
+                    upCheque(i, {
+                      ...(ocr.cheque_number
+                        ? { cheque_number: ocr.cheque_number }
+                        : {}),
+                      ...(ocr.bank_id ? { bank_id: ocr.bank_id } : {}),
+                      ...(ocr.amount ? { amount: ocr.amount } : {}),
+                      ...(ocr.cheque_date ? { cheque_date: ocr.cheque_date } : {}),
+                      ...(ocr.bounce_reason
+                        ? { bounce_reason: ocr.bounce_reason }
+                        : {}),
+                      ...(ocr.cheque_type ? { cheque_type: ocr.cheque_type } : {}),
+                    });
+                  }}
                 />
-              </Field>
+              </div>
               <Field label="Cheque Number" small>
                 <input
                   value={c.cheque_number}
@@ -671,7 +680,12 @@ export function CaseForm({ caseId }: { caseId?: number }) {
 
       {isEdit && meta && (
         <Card title="Attachments">
-          <AttachmentManager caseId={meta.id} attachments={meta.attachments} locked={locked} onChange={(atts) => setMeta({ ...meta, attachments: atts })} />
+          <CategorizedAttachments
+            caseId={meta.id}
+            attachments={meta.attachments}
+            locked={locked}
+            onChange={(atts) => setMeta({ ...meta, attachments: atts })}
+          />
         </Card>
       )}
 
@@ -725,7 +739,6 @@ function toDraft(c: CaseFull): CaseDraft {
     division_id: (c.division_id as number) ?? null,
     salesman_id: (c.salesman_id as number) ?? null,
     bank_id: (c.bank_id as number) ?? null,
-    case_type_id: (c.case_type_id as number) ?? null,
     customer_type: def(c.customer_type, 'Retail'),
     actual_due_amount: def(c.actual_due_amount, ''),
     legal_filing_amount: def(c.legal_filing_amount, ''),
@@ -743,6 +756,7 @@ function toDraft(c: CaseFull): CaseDraft {
     cheques:
       Array.isArray(c.cheques) && c.cheques.length
         ? (c.cheques as ChequeDraft[]).map((ch) => ({
+            id: ch.id,
             cheque_number: ch.cheque_number ?? '',
             bank_id: ch.bank_id ?? null,
             bank_name_text: ch.bank_name_text ?? '',
@@ -889,160 +903,3 @@ function Select({
   );
 }
 
-function AttachmentManager({
-  caseId,
-  attachments,
-  locked,
-  onChange,
-}: {
-  caseId: number;
-  attachments: CaseFull['attachments'];
-  locked: boolean;
-  onChange: (atts: CaseFull['attachments']) => void;
-}) {
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function upload(files: FileList | null) {
-    if (!files) return;
-    setBusy(true);
-    setErr(null);
-    try {
-      const updated = [...attachments];
-      for (const f of Array.from(files)) {
-        const fd = new FormData();
-        fd.append('file', f);
-        fd.append('category', 'Supporting Document');
-        const token = useAuthStore.getState().accessToken;
-        const r = await fetch(`${API_BASE}/api/v1/cases/${caseId}/attachments`, {
-          method: 'POST',
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          body: fd,
-        });
-        if (!r.ok) {
-          throw new Error((await r.json()).detail || 'Upload failed');
-        }
-        updated.push(await r.json());
-      }
-      onChange(updated);
-    } catch (e) {
-      setErr(String((e as Error).message));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(id: number) {
-    if (!confirm('Remove this attachment?')) return;
-    try {
-      await api(`/api/v1/cases/${caseId}/attachments/${id}`, { method: 'DELETE' });
-      onChange(attachments.filter((a) => a.id !== id));
-    } catch (e) {
-      setErr((e as ApiError).message);
-    }
-  }
-
-  async function downloadOne(att: CaseFull['attachments'][number]) {
-    try {
-      const token = useAuthStore.getState().accessToken;
-      const r = await fetch(
-        `${API_BASE}/api/v1/cases/${caseId}/attachments/${att.id}/download`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-      );
-      if (!r.ok) throw new Error(`Download failed (${r.status})`);
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = att.original_filename;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  }
-
-  async function downloadZip() {
-    try {
-      const token = useAuthStore.getState().accessToken;
-      const r = await fetch(`${API_BASE}/api/v1/cases/${caseId}/attachments.zip`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-      });
-      if (!r.ok) throw new Error(`ZIP failed (${r.status})`);
-      const blob = await r.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `case-${caseId}-attachments.zip`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setErr((e as Error).message);
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        {!locked && (
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40">
-            <Paperclip className="h-4 w-4" />
-            {busy ? 'Uploading...' : 'Attach Files'}
-            <input
-              type="file"
-              multiple
-              disabled={busy}
-              onChange={(e) => upload(e.target.files)}
-              className="hidden"
-            />
-          </label>
-        )}
-        {attachments.length > 0 && (
-          <button
-            type="button"
-            onClick={downloadZip}
-            className="inline-flex items-center gap-2 rounded-md border border-pug-gold-500/40 bg-pug-gold-500/10 px-3 py-2 text-sm font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20 dark:text-pug-gold-300"
-          >
-            <Paperclip className="h-4 w-4" /> Download all as ZIP ({attachments.length})
-          </button>
-        )}
-      </div>
-      {err && (
-        <div className="rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
-          {err}
-        </div>
-      )}
-      {attachments.length === 0 ? (
-        <div className="text-xs text-[rgb(var(--color-muted))]">No attachments yet.</div>
-      ) : (
-        <ul className="divide-y divide-[rgb(var(--color-border))] rounded-md border border-[rgb(var(--color-border))] text-sm">
-          {attachments.map((a) => (
-            <li key={a.id} className="flex items-center gap-3 px-3 py-2">
-              <Paperclip className="h-4 w-4 text-[rgb(var(--color-muted))]" />
-              <div className="min-w-0 flex-1">
-                <button
-                  type="button"
-                  onClick={() => downloadOne(a)}
-                  className="truncate text-left font-medium hover:underline"
-                >
-                  {a.original_filename}
-                </button>
-                <div className="text-[10px] text-[rgb(var(--color-muted))]">
-                  {a.category} &middot; {(a.size_bytes / 1024).toFixed(1)} KB
-                </div>
-              </div>
-              {!locked && (
-                <button
-                  onClick={() => remove(a.id)}
-                  className="rounded p-1 text-xs text-rose-600 hover:bg-rose-500/10"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}

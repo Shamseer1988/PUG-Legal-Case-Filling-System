@@ -38,6 +38,41 @@ class AttachmentRead(BaseModel):
     created_at: datetime
 
 
+# ---------- Cheque attachment (Phase 36) ----------
+class ChequeAttachmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    cheque_id: int
+    case_id: int
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    is_bank_return_letter: bool
+    uploaded_by_id: int
+    created_at: datetime
+
+
+class ChequeOcrFields(BaseModel):
+    """OCR auto-fill payload returned with a cheque-attachment
+    upload so the form can populate the row inline."""
+
+    success: bool
+    engine: str
+    cheque_number: str | None = None
+    bank_id: int | None = None
+    bank_name: str | None = None
+    amount: str | None = None
+    cheque_date: str | None = None
+    cheque_type: str | None = None
+    bounce_reason: str | None = None
+    warnings: list[str] = []
+
+
+class ChequeAttachmentUploadResult(BaseModel):
+    attachment: ChequeAttachmentRead
+    ocr: ChequeOcrFields
+
+
 # ---------- Case ----------
 class CaseBase(BaseModel):
     customer_id: int

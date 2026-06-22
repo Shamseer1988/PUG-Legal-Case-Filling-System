@@ -10,6 +10,7 @@ from app.models.case import (
     CaseStatusUpdate,
     CaseTransitionAttachment,
     Cheque,
+    ChequeAttachment,
 )
 from app.models.case_view import CaseView
 from app.models.closure import CaseClosure
@@ -45,6 +46,7 @@ __all__ = [
     "CaseType",
     "Case",
     "Cheque",
+    "ChequeAttachment",
     "CaseView",
     "CaseAttachment",
     "CaseNoSequence",

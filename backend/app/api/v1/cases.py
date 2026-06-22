@@ -15,6 +15,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
+from app.core.attachment_categories import normalise_category
 from app.core.deps import get_current_user, require_permission
 from app.core.permissions import CASES_CREATE, CASES_READ, CASES_SIGNED_FORM
 from app.db.session import get_db
@@ -23,6 +24,8 @@ from app.models.case import (
     Case,
     CaseAttachment,
     CaseTransitionAttachment,
+    Cheque,
+    ChequeAttachment,
 )
 from app.models.user import User
 from app.schemas.approval import (
@@ -39,11 +42,15 @@ from app.schemas.case import (
     CaseSearchPage,
     CaseSearchRow,
     CaseUpdate,
+    ChequeAttachmentRead,
+    ChequeAttachmentUploadResult,
+    ChequeOcrFields,
 )
 from app.schemas.closure import ClosureCreate, ClosureRead
 from app.services import (
     audit_service,
     case_service,
+    cheque_ocr,
     closure_service,
     notification_service,
     render,
@@ -465,7 +472,7 @@ def delete_case(
         f"Deleted draft case {case.case_no}",
         {"case_no": case.case_no, "status": case.status},
     )
-    storage.delete_case_dir(case.id)
+    storage.delete_case_dir(case)
     db.delete(case)
     db.commit()
 
@@ -479,19 +486,19 @@ def delete_case(
 def upload_attachment(
     case_id: int,
     file: UploadFile = File(...),
-    category: str = Form("Supporting Document"),
+    category: str = Form("Other Docs"),
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(CASES_CREATE)),
 ) -> AttachmentRead:
     case = _get_case_or_404(db, user, case_id)
-    stored, size = storage.save_case_attachment(case.id, file)
+    stored, size = storage.save_case_attachment(case, file)
     att = CaseAttachment(
         case_id=case.id,
         original_filename=file.filename or stored,
         stored_filename=stored,
         mime_type=file.content_type or "application/octet-stream",
         size_bytes=size,
-        category=category,
+        category=normalise_category(category),
         uploaded_by_id=user.id,
     )
     db.add(att)
@@ -511,7 +518,7 @@ def download_attachment(
     att = db.get(CaseAttachment, att_id)
     if not att or att.case_id != case.id:
         raise HTTPException(status_code=404, detail="Attachment not found")
-    path = storage.get_case_attachment_path(case.id, att.stored_filename)
+    path = storage.get_case_attachment_path(case, att.stored_filename)
     if not path.exists():
         raise HTTPException(status_code=410, detail="File missing on disk")
     return FileResponse(
@@ -535,7 +542,211 @@ def delete_attachment(
     att = db.get(CaseAttachment, att_id)
     if not att or att.case_id != case.id:
         raise HTTPException(status_code=404, detail="Attachment not found")
-    storage.delete_case_attachment(case.id, att.stored_filename)
+    storage.delete_case_attachment(case, att.stored_filename)
+    db.delete(att)
+    db.commit()
+
+
+@router.get("/{case_id}/attachments/{att_id}/view")
+def view_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    """Phase 36: same bytes as ``/download`` but with
+    ``Content-Disposition: inline`` so the browser embeds it in
+    the AttachmentViewerModal instead of triggering a save dialog."""
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_case_attachment_path(case, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+        content_disposition_type="inline",
+    )
+
+
+# ----------------- Cheque attachments (Phase 36) -----------------
+def _cheque_or_404(db: Session, case: Case, cheque_id: int) -> Cheque:
+    row = db.get(Cheque, cheque_id)
+    if not row or row.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Cheque not found")
+    return row
+
+
+@router.post(
+    "/{case_id}/cheques/{cheque_id}/attachments",
+    response_model=ChequeAttachmentUploadResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    file: UploadFile = File(...),
+    is_bank_return_letter: bool = Form(True),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> ChequeAttachmentUploadResult:
+    """Upload a file linked to a single cheque row. When
+    ``is_bank_return_letter=True`` (the default) the file is also
+    fed to the OCR pipeline; any extracted fields come back in the
+    ``ocr`` part of the response and the form auto-fills the row.
+
+    Reading the file into memory is fine for the bank-letter size
+    range (<10MB is typical); for larger uploads a future revision
+    can switch to a streaming tee.
+    """
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+
+    # Buffer + persist so we can both stream to disk and feed OCR
+    # without re-reading from the upload's tempfile.
+    blob = file.file.read()
+    mime = (file.content_type or "application/octet-stream").lower()
+
+    # Stream-save by re-using the save helper on a fresh stream.
+    import io
+
+    class _BlobUpload:
+        def __init__(self, b: bytes, name: str, content_type: str) -> None:
+            self.file = io.BytesIO(b)
+            self.filename = name
+            self.content_type = content_type
+
+    stored, size = storage.save_cheque_attachment(
+        case, cheque.id, _BlobUpload(blob, file.filename or "letter", mime)
+    )
+
+    ocr_payload: dict | None = None
+    if is_bank_return_letter:
+        result = cheque_ocr.extract_fields(db, blob=blob, mime=mime)
+        ocr_payload = result.to_payload()
+        # Attaching a bank return letter is an explicit "extract
+        # these values" signal from the user, so we OVERWRITE any
+        # placeholder data they typed before the upload. The UI
+        # still echoes the new values so the user can manually
+        # tweak anything OCR got wrong.
+        if result.cheque_number:
+            cheque.cheque_number = result.cheque_number
+        if result.bank_id:
+            cheque.bank_id = result.bank_id
+        if result.amount is not None:
+            cheque.amount = result.amount
+        if result.cheque_date:
+            cheque.cheque_date = result.cheque_date
+        if result.bounce_reason:
+            cheque.bounce_reason = result.bounce_reason
+
+    import json as _json
+
+    att = ChequeAttachment(
+        cheque_id=cheque.id,
+        case_id=case.id,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=mime,
+        size_bytes=size,
+        is_bank_return_letter=is_bank_return_letter,
+        ocr_extracted_json=_json.dumps(ocr_payload) if ocr_payload else "",
+        uploaded_by_id=user.id,
+    )
+    db.add(att)
+    db.commit()
+    db.refresh(att)
+
+    return ChequeAttachmentUploadResult(
+        attachment=ChequeAttachmentRead.model_validate(att),
+        ocr=ChequeOcrFields(**(ocr_payload or {"success": False, "engine": "skipped"})),
+    )
+
+
+@router.get(
+    "/{case_id}/cheques/{cheque_id}/attachments",
+    response_model=list[ChequeAttachmentRead],
+)
+def list_cheque_attachments(
+    case_id: int,
+    cheque_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> list[ChequeAttachmentRead]:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    return [ChequeAttachmentRead.model_validate(a) for a in cheque.attachments]
+
+
+@router.get(
+    "/{case_id}/cheques/{cheque_id}/attachments/{att_id}/download",
+)
+def download_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    att = db.get(ChequeAttachment, att_id)
+    if not att or att.cheque_id != cheque.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_cheque_attachment_path(case, cheque.id, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path, filename=att.original_filename, media_type=att.mime_type
+    )
+
+
+@router.get(
+    "/{case_id}/cheques/{cheque_id}/attachments/{att_id}/view",
+)
+def view_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    att = db.get(ChequeAttachment, att_id)
+    if not att or att.cheque_id != cheque.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_cheque_attachment_path(case, cheque.id, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+        content_disposition_type="inline",
+    )
+
+
+@router.delete(
+    "/{case_id}/cheques/{cheque_id}/attachments/{att_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> None:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    att = db.get(ChequeAttachment, att_id)
+    if not att or att.cheque_id != cheque.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    storage.delete_cheque_attachment(case, cheque.id, att.stored_filename)
     db.delete(att)
     db.commit()
 
@@ -574,35 +785,65 @@ def download_attachments_zip(
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         seen: dict[str, int] = {}
-        for a in atts:
-            path = storage.get_case_attachment_path(case.id, a.stored_filename)
-            if not path.exists():
-                continue
-            name = a.original_filename or a.stored_filename
-            # Disambiguate if multiple files share a name
+
+        def _arcname(name: str) -> str:
             if name in seen:
                 seen[name] += 1
                 stem, _, ext = name.rpartition(".")
-                name = f"{stem or name}-{seen[name]}{('.' + ext) if ext else ''}"
-            else:
-                seen[name] = 0
+                return f"{stem or name}-{seen[name]}{('.' + ext) if ext else ''}"
+            seen[name] = 0
+            return name
+
+        for a in atts:
+            path = storage.get_case_attachment_path(case, a.stored_filename)
+            if not path.exists():
+                continue
+            name = a.original_filename or a.stored_filename
             try:
-                zf.write(path, arcname=name)
+                zf.write(path, arcname=_arcname(name))
             except Exception:  # pragma: no cover - skip unreadable file
                 continue
-        # Manifest with original metadata
-        manifest = "\n".join(
-            f"{a.id}\t{a.category}\t{a.size_bytes}\t{a.original_filename}"
+
+        # Phase 36: cheque-level attachments under cheques/cheque-<N>/.
+        cheque_count = 0
+        for idx, cheque in enumerate(case.cheques, start=1):
+            for ca in cheque.attachments:
+                path = storage.get_cheque_attachment_path(
+                    case, cheque.id, ca.stored_filename
+                )
+                if not path.exists():
+                    continue
+                arc = (
+                    f"cheques/cheque-{idx}/"
+                    f"{_arcname(ca.original_filename or ca.stored_filename)}"
+                )
+                try:
+                    zf.write(path, arcname=arc)
+                    cheque_count += 1
+                except Exception:  # pragma: no cover
+                    continue
+
+        # Manifest with original metadata (case + cheque).
+        manifest_lines = [
+            f"{a.id}\tcase\t{a.category}\t{a.size_bytes}\t{a.original_filename}"
             for a in atts
-        )
-        zf.writestr("manifest.tsv", manifest)
+        ]
+        for idx, cheque in enumerate(case.cheques, start=1):
+            for ca in cheque.attachments:
+                manifest_lines.append(
+                    f"{ca.id}\tcheque-{idx}\t-\t{ca.size_bytes}\t{ca.original_filename}"
+                )
+        zf.writestr("manifest.tsv", "\n".join(manifest_lines))
 
     audit_service.record_event(
         db,
         action="attachments_zip",
         entity_type="Case",
         entity_id=case.id,
-        summary=f"Downloaded ZIP of {len(atts)} attachment(s)",
+        summary=(
+            f"Downloaded ZIP of {len(atts)} case attachment(s) + "
+            f"{cheque_count} cheque file(s)"
+        ),
         actor=user,
         commit=True,
     )
@@ -639,7 +880,7 @@ def upload_transition_attachment(
             status_code=403,
             detail=f"Not authorised to act at stage '{case.current_stage}'",
         )
-    stored, size = storage.save_transition_attachment(case.id, file)
+    stored, size = storage.save_transition_attachment(case, file)
     att = CaseTransitionAttachment(
         case_id=case.id,
         transition_id=None,
@@ -678,13 +919,37 @@ def download_transition_attachment(
     att = db.get(CaseTransitionAttachment, att_id)
     if not att or att.case_id != case.id:
         raise HTTPException(status_code=404, detail="Attachment not found")
-    path = storage.get_transition_attachment_path(case.id, att.stored_filename)
+    path = storage.get_transition_attachment_path(case, att.stored_filename)
     if not path.exists():
         raise HTTPException(status_code=410, detail="File missing on disk")
     return FileResponse(
         path,
         filename=att.original_filename,
         media_type=att.mime_type,
+    )
+
+
+@router.get(
+    "/{case_id}/transition-attachments/{att_id}/view",
+)
+def view_transition_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseTransitionAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_transition_attachment_path(case, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+        content_disposition_type="inline",
     )
 
 
@@ -710,7 +975,7 @@ def delete_transition_attachment(
         )
     if att.uploaded_by_id != user.id and not user.is_super:
         raise HTTPException(status_code=403, detail="Not your attachment")
-    storage.delete_transition_attachment(case.id, att.stored_filename)
+    storage.delete_transition_attachment(case, att.stored_filename)
     db.delete(att)
     db.commit()
 
@@ -761,7 +1026,7 @@ def upload_signed_form(
     """
     case = _get_case_or_404(db, user, case_id)
 
-    stored, size = storage.save_case_attachment(case.id, file)
+    stored, size = storage.save_case_attachment(case, file)
     new_att = CaseAttachment(
         case_id=case.id,
         original_filename=file.filename or stored,
@@ -786,7 +1051,7 @@ def upload_signed_form(
         .all()
     )
     for o in olds:
-        storage.delete_case_attachment(case.id, o.stored_filename)
+        storage.delete_case_attachment(case, o.stored_filename)
         db.delete(o)
 
     audit_service.record_event(
@@ -828,7 +1093,7 @@ def delete_signed_form(
     if not rows:
         return
     for a in rows:
-        storage.delete_case_attachment(case.id, a.stored_filename)
+        storage.delete_case_attachment(case, a.stored_filename)
         db.delete(a)
     audit_service.record_event(
         db,

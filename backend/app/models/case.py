@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     String,
+    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -172,6 +173,47 @@ class Cheque(Base, TimestampMixin):
     bounce_reason: Mapped[str] = mapped_column(String(300), default="")
 
     case: Mapped[Case] = relationship(back_populates="cheques")
+    attachments: Mapped[list["ChequeAttachment"]] = relationship(
+        back_populates="cheque",
+        cascade="all, delete-orphan",
+        order_by="ChequeAttachment.id",
+        lazy="selectin",
+    )
+
+
+class ChequeAttachment(Base, TimestampMixin):
+    """Phase 36: bank return acknowledgement letters and other
+    cheque-specific files. The OCR output that auto-filled the
+    cheque row (if any) is stored on the row for audit so we can
+    explain *why* the cheque carries the values it does.
+    """
+
+    __tablename__ = "cheque_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    cheque_id: Mapped[int] = mapped_column(
+        ForeignKey("cheques.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    # Denormalised case_id so the ZIP and download endpoints can
+    # authorise without joining through cheque every time.
+    case_id: Mapped[int] = mapped_column(
+        ForeignKey("cases.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(100), default="application/octet-stream")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # True when the upload was processed as a bank return letter and
+    # the OCR pipeline produced a usable result.
+    is_bank_return_letter: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
+    ocr_extracted_json: Mapped[str] = mapped_column(Text, default="")
+    uploaded_by_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    cheque: Mapped[Cheque] = relationship(back_populates="attachments")
 
 
 class CaseAttachment(Base, TimestampMixin):

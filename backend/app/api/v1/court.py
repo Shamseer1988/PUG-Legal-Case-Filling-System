@@ -190,7 +190,7 @@ def upload_court_filing_attachment(
         )
 
     # Stream-save the new file alongside other case attachments.
-    stored, size = storage.save_case_attachment(case.id, file)
+    stored, size = storage.save_case_attachment(case, file)
     att = CaseAttachment(
         case_id=case.id,
         original_filename=file.filename or stored,
@@ -208,7 +208,7 @@ def upload_court_filing_attachment(
     if f.acknowledgment_attachment_id:
         old = db.get(CaseAttachment, f.acknowledgment_attachment_id)
         if old and old.id != att.id:
-            storage.delete_case_attachment(case.id, old.stored_filename)
+            storage.delete_case_attachment(case, old.stored_filename)
             db.delete(old)
 
     f.acknowledgment_attachment_id = att.id
@@ -244,7 +244,7 @@ def delete_court_filing_attachment(
     att = db.get(CaseAttachment, f.acknowledgment_attachment_id)
     f.acknowledgment_attachment_id = None
     if att:
-        storage.delete_case_attachment(case.id, att.stored_filename)
+        storage.delete_case_attachment(case, att.stored_filename)
         db.delete(att)
     audit_service.record_event(
         db,
