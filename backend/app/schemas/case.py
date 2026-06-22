@@ -115,6 +115,40 @@ class CaseSearchHit(BaseModel):
     status: str
 
 
+class CaseSearchRow(BaseModel):
+    """Richer row returned by the advanced cases search.
+
+    Carries denormalised customer + division names so the Cases page
+    can render the filtered list without a second round-trip for
+    each lookup.
+    """
+
+    id: int
+    case_no: str
+    customer_id: int
+    customer_name: str
+    customer_code: str
+    division_id: int
+    division_name: str
+    status: str
+    current_stage: str
+    legal_filing_amount: Decimal
+    is_criminal: bool
+    is_civil: bool
+    created_at: datetime
+    submitted_at: datetime | None
+    sla_due_at: datetime | None
+
+
+class CaseSearchPage(BaseModel):
+    """Paginated wrapper returned by ``GET /cases/search-full``."""
+
+    items: list[CaseSearchRow]
+    total: int
+    limit: int
+    offset: int
+
+
 class CaseRead(CaseBase):
     model_config = ConfigDict(from_attributes=True)
     id: int

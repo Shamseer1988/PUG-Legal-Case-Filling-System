@@ -1,11 +1,14 @@
 """Case CRUD, attachments and branded print view."""
 
+from datetime import datetime
+
 from fastapi import (
     APIRouter,
     Depends,
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
@@ -33,6 +36,8 @@ from app.schemas.case import (
     CaseListItem,
     CaseRead,
     CaseSearchHit,
+    CaseSearchPage,
+    CaseSearchRow,
     CaseUpdate,
 )
 from app.schemas.closure import ClosureCreate, ClosureRead
@@ -120,6 +125,136 @@ def search_cases(
         )
         for r in rows
     ]
+
+
+@router.get("/search-full", response_model=CaseSearchPage)
+def search_cases_full(
+    q: str = "",
+    status_in: list[str] = Query(default=[]),
+    stage_in: list[str] = Query(default=[]),
+    division_id_in: list[int] = Query(default=[]),
+    amount_min: float | None = None,
+    amount_max: float | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    is_criminal: bool | None = None,
+    is_civil: bool | None = None,
+    limit: int = 25,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> CaseSearchPage:
+    """Advanced cases search with filters + pagination.
+
+    Powers the Cases page filter sidebar. Search is a single
+    ``q`` string matched (case-insensitive) against case_no,
+    customer name + code, and the commands free-text field;
+    everything else is a structured filter.
+
+    Pagination uses ``limit`` (max 200) + ``offset``; the
+    response carries ``total`` so the UI can render "Showing
+    1-25 of 137" headers without a second request.
+    """
+    from app.models.masters import Customer, Division
+
+    base = (
+        _scoped_query(db, user)
+        .join(Customer, Case.customer_id == Customer.id)
+        .join(Division, Case.division_id == Division.id)
+    )
+
+    needle = (q or "").strip()
+    if needle:
+        like = f"%{needle}%"
+        base = base.filter(
+            (Case.case_no.ilike(like))
+            | (Customer.name.ilike(like))
+            | (Customer.code.ilike(like))
+            | (Case.commands.ilike(like))
+        )
+
+    if status_in:
+        base = base.filter(Case.status.in_(status_in))
+    if stage_in:
+        base = base.filter(Case.current_stage.in_(stage_in))
+    if division_id_in:
+        base = base.filter(Case.division_id.in_(division_id_in))
+    if amount_min is not None:
+        base = base.filter(Case.legal_filing_amount >= amount_min)
+    if amount_max is not None:
+        base = base.filter(Case.legal_filing_amount <= amount_max)
+    if date_from:
+        try:
+            df = datetime.fromisoformat(date_from)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Bad date_from: {e}") from e
+        base = base.filter(Case.created_at >= df)
+    if date_to:
+        try:
+            dt = datetime.fromisoformat(date_to)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Bad date_to: {e}") from e
+        base = base.filter(Case.created_at <= dt)
+    if is_criminal is not None:
+        base = base.filter(Case.is_criminal.is_(is_criminal))
+    if is_civil is not None:
+        base = base.filter(Case.is_civil.is_(is_civil))
+
+    # Count the filtered universe before paging so the UI can show
+    # "showing N of M". Subquery on a single column is the cheapest
+    # way to count after JOINs.
+    total = base.with_entities(Case.id).count()
+
+    rows = (
+        base.with_entities(
+            Case.id,
+            Case.case_no,
+            Customer.id,
+            Customer.name,
+            Customer.code,
+            Division.id,
+            Division.name,
+            Case.status,
+            Case.current_stage,
+            Case.legal_filing_amount,
+            Case.is_criminal,
+            Case.is_civil,
+            Case.created_at,
+            Case.submitted_at,
+            Case.sla_due_at,
+        )
+        .order_by(Case.id.desc())
+        .offset(max(0, offset))
+        .limit(max(1, min(limit, 200)))
+        .all()
+    )
+
+    items = [
+        CaseSearchRow(
+            id=r[0],
+            case_no=r[1],
+            customer_id=r[2],
+            customer_name=r[3] or "",
+            customer_code=r[4] or "",
+            division_id=r[5],
+            division_name=r[6] or "",
+            status=r[7],
+            current_stage=r[8],
+            legal_filing_amount=r[9] or 0,
+            is_criminal=bool(r[10]),
+            is_civil=bool(r[11]),
+            created_at=r[12],
+            submitted_at=r[13],
+            sla_due_at=r[14],
+        )
+        for r in rows
+    ]
+    return CaseSearchPage(
+        items=items,
+        total=int(total),
+        limit=len(items),
+        offset=max(0, offset),
+    )
 
 
 @router.post("", response_model=CaseRead, status_code=status.HTTP_201_CREATED)
