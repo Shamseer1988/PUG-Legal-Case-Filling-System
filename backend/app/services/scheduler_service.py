@@ -11,6 +11,7 @@ from loguru import logger
 _scheduler: BackgroundScheduler | None = None
 TICK_JOB_ID = "scheduled-reports-tick"
 EMAIL_QUEUE_JOB_ID = "email-queue-tick"
+SLA_JOB_ID = "sla-breach-tick"
 
 
 def start() -> None:
@@ -39,9 +40,20 @@ def start() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # Phase 33: SLA breach scanner. 5 minutes is responsive enough
+    # for human-scale SLAs (hours/days) without DB churn.
+    _scheduler.add_job(
+        _sla_tick,
+        "interval",
+        seconds=300,
+        id=SLA_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     _scheduler.start()
     logger.info(
-        "Scheduler started (reports tick=60s, email queue tick=10s)"
+        "Scheduler started (reports=60s, email=10s, sla=300s)"
     )
 
 
@@ -85,6 +97,24 @@ def _email_tick() -> None:
             )
     except Exception as e:  # pragma: no cover (defensive)
         logger.exception("Email queue tick failed: {}", e)
+    finally:
+        db.close()
+
+
+def _sla_tick() -> None:
+    """Phase 33: escalate any newly breached cases."""
+    from app.db.session import SessionLocal
+    from app.services import sla_service
+
+    db = SessionLocal()
+    try:
+        stats = sla_service.scan_and_escalate(db)
+        if stats["escalated"]:
+            logger.info(
+                "SLA tick: scanned={scanned} escalated={escalated}", **stats
+            )
+    except Exception as e:  # pragma: no cover (defensive)
+        logger.exception("SLA tick failed: {}", e)
     finally:
         db.close()
 

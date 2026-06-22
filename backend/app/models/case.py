@@ -118,6 +118,13 @@ class Case(Base, TimestampMixin):
         DateTime(timezone=True), nullable=True
     )
     sla_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Phase 33: stamped the first time the background SLA scanner
+    # fires the breach notification for the current stage. Cleared
+    # in ``_set_stage`` so the next stage starts with a fresh slate.
+    # Prevents duplicate notifications on every tick.
+    sla_breach_notified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # Authorship
     created_by_id: Mapped[int] = mapped_column(

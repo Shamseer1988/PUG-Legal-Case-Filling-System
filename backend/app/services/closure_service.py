@@ -92,6 +92,7 @@ def close_case(
     case.status = CASE_STATUS_CLOSED
     case.current_stage = STAGE_CLOSED
     case.sla_due_at = None
+    case.sla_breach_notified_at = None
     db.add(
         CaseStatusUpdate(
             case_id=case.id,

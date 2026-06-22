@@ -315,6 +315,46 @@ def on_case_closed(db: Session, case: Case, actor: User, closure_type: str) -> N
             )
 
 
+def on_case_sla_breached(db: Session, case: Case) -> None:
+    """Phase 33: scheduled escalation when a case overruns its stage SLA.
+
+    Targets the signatory currently sitting on the case (the same
+    person who would receive the ``case.advanced`` ping). If no
+    assignee is mapped on the case for that stage, the breach is
+    silently ignored — there's nobody to nudge.
+    """
+    from app.core.workflow import get_stage
+
+    cfg = get_stage(case.current_stage)
+    user_field = cfg.user_field if cfg else None
+    if not user_field:
+        return
+    target = getattr(case, user_field, None)
+    if not target:
+        return
+    due = case.sla_due_at
+    facts = _case_facts(case)
+    if due is not None:
+        facts.append(("SLA Due", due.strftime("%Y-%m-%d %H:%M UTC")))
+    _emit(
+        db,
+        user_id=target,
+        title=f"SLA breach: {case.case_no}",
+        body=(
+            f"{case.case_no} is past its {case.current_stage} SLA. "
+            "Please approve or request clarification."
+        ),
+        link=_case_url(case.id),
+        event="case.sla_breached",
+        related_case_id=case.id,
+        lines=[
+            f"{case.case_no} has overrun the {case.current_stage} stage SLA.",
+            "Open the case to approve, reject, or ask for clarification.",
+        ],
+        facts=facts,
+    )
+
+
 def on_cash_request_created(db: Session, cash: CashRequest, case: Case) -> None:
     if not case.fm_id:
         return

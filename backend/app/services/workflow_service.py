@@ -49,6 +49,9 @@ def _set_stage(case: Case, new_stage: str, cfg: StageConfig | None) -> None:
     case.sla_due_at = (
         _utcnow() + timedelta(hours=cfg.sla_hours) if cfg and cfg.sla_hours else None
     )
+    # Phase 33: clear the breach flag so the scanner can fire a fresh
+    # notification if the new stage also overruns its SLA.
+    case.sla_breach_notified_at = None
 
 
 def _audit_transition(
@@ -206,6 +209,7 @@ def reject(db: Session, case: Case, user: User, comment: str) -> Case:
     from_status, from_stage = case.status, case.current_stage
     case.status = CASE_STATUS_REJECTED
     case.sla_due_at = None
+    case.sla_breach_notified_at = None
     _log(
         db,
         case,
