@@ -70,3 +70,48 @@ class WorkflowDescriptor(BaseModel):
     stages: list[StageDescriptor]
     accountant_stage: str
     lawyer_stage: str
+
+
+# ---------------------------------------------------------------------------
+# Bulk operations (Phase 28)
+# ---------------------------------------------------------------------------
+class BulkTransitionRequest(BaseModel):
+    case_ids: list[int] = Field(min_length=1, max_length=200)
+    action: str = Field(
+        pattern="^(approve|reject|request_clarification|lawyer_approve)$"
+    )
+    comment: str = ""
+
+
+class BulkTransitionItem(BaseModel):
+    case_id: int
+    case_no: str = ""
+    ok: bool
+    detail: str = ""
+
+
+class BulkTransitionResult(BaseModel):
+    succeeded: int
+    failed: int
+    items: list[BulkTransitionItem]
+
+
+class BulkReassignRequest(BaseModel):
+    user_field: str = Field(
+        pattern=(
+            "^("
+            "sales_manager_id|division_manager_id|auditor_id|"
+            "fm_id|ed_id|chairman_id|lawyer_id"
+            ")$"
+        )
+    )
+    from_user_id: int
+    to_user_id: int
+    # When true, only re-assign cases that are still in-flight; closed
+    # / rejected cases keep their historic signatory record intact.
+    only_open: bool = True
+
+
+class BulkReassignResult(BaseModel):
+    updated: int
+    skipped_closed: int

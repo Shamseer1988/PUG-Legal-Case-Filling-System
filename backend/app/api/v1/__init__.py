@@ -7,6 +7,7 @@ from app.api.v1 import (
     audit,
     auth,
     backup,
+    bulk_admin,
     cases,
     court,
     dashboard,
@@ -31,6 +32,7 @@ api_router.include_router(roles.router)
 api_router.include_router(masters.router, prefix="/masters")
 api_router.include_router(cases.router)
 api_router.include_router(approvals.router)
+api_router.include_router(bulk_admin.router)
 api_router.include_router(court.cases_router)
 api_router.include_router(court.cash_router)
 api_router.include_router(court.hearings_router)

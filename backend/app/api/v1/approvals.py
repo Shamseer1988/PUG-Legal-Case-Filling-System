@@ -1,13 +1,21 @@
-"""Approval inbox + workflow descriptor."""
+"""Approval inbox + workflow descriptor + bulk transitions."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.deps import get_current_user
 from app.core.workflow import WORKFLOW_STAGES
 from app.db.session import get_db
+from app.models.case import Case
 from app.models.user import User
-from app.schemas.approval import InboxItem, StageDescriptor, WorkflowDescriptor
+from app.schemas.approval import (
+    BulkTransitionItem,
+    BulkTransitionRequest,
+    BulkTransitionResult,
+    InboxItem,
+    StageDescriptor,
+    WorkflowDescriptor,
+)
 from app.services import workflow_service
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -79,4 +87,129 @@ def workflow_descriptor(_: User = Depends(get_current_user)) -> WorkflowDescript
         ],
         accountant_stage="Accountant",
         lawyer_stage="Lawyer",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Bulk transitions (Phase 28)
+# ---------------------------------------------------------------------------
+def _scoped_case(db: Session, user: User, case_id: int) -> Case | None:
+    """Return the case if it exists AND the user is within division scope."""
+    q = db.query(Case)
+    if not user.is_super:
+        perms = user.role.permissions if user.role else []
+        if "*" not in perms and user.divisions:
+            q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+    return q.filter(Case.id == case_id).first()
+
+
+@router.post("/bulk-transition", response_model=BulkTransitionResult)
+def bulk_transition(
+    payload: BulkTransitionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> BulkTransitionResult:
+    """Apply one approval action to a batch of cases.
+
+    Each case is evaluated independently:
+      - if the user isn't authorised for the case's current stage,
+        it is skipped with a per-row "Not authorised" reason;
+      - workflow errors (wrong status, missing comment for reject,
+        ...) are captured per-row and don't abort the batch;
+      - successful transitions are committed by ``workflow_service``
+        so a single broken transition doesn't roll the batch back.
+
+    Returns a per-case result so the UI can show "12 approved,
+    2 skipped (not authorised)" without an extra request.
+    """
+    # ``reject`` and ``request_clarification`` require a non-empty
+    # comment in the single-case endpoint; enforce the same here so
+    # the user gets a clear error before we touch any rows.
+    if payload.action in ("reject", "request_clarification") and not payload.comment.strip():
+        raise HTTPException(
+            status_code=400,
+            detail=f"A comment is required for action '{payload.action}'",
+        )
+
+    # De-duplicate while preserving order so the UI's reported list
+    # matches what the user picked.
+    seen: set[int] = set()
+    ordered_ids: list[int] = []
+    for cid in payload.case_ids:
+        if cid not in seen:
+            seen.add(cid)
+            ordered_ids.append(cid)
+
+    items: list[BulkTransitionItem] = []
+    succeeded = 0
+    failed = 0
+
+    for case_id in ordered_ids:
+        case = _scoped_case(db, user, case_id)
+        if not case:
+            items.append(
+                BulkTransitionItem(
+                    case_id=case_id, ok=False, detail="Case not found or out of scope"
+                )
+            )
+            failed += 1
+            continue
+
+        case_no = case.case_no
+        if not workflow_service.can_act(user, case):
+            items.append(
+                BulkTransitionItem(
+                    case_id=case_id,
+                    case_no=case_no,
+                    ok=False,
+                    detail=f"Not authorised at stage '{case.current_stage}'",
+                )
+            )
+            failed += 1
+            continue
+
+        try:
+            if payload.action == "approve":
+                workflow_service.approve(db, case, user, payload.comment)
+            elif payload.action == "reject":
+                workflow_service.reject(db, case, user, payload.comment)
+            elif payload.action == "request_clarification":
+                workflow_service.request_clarification(
+                    db, case, user, payload.comment
+                )
+            elif payload.action == "lawyer_approve":
+                workflow_service.lawyer_approve(db, case, user, payload.comment)
+            else:
+                raise workflow_service.WorkflowError(
+                    f"Unknown action: {payload.action}"
+                )
+        except workflow_service.WorkflowError as e:
+            db.rollback()
+            items.append(
+                BulkTransitionItem(
+                    case_id=case_id, case_no=case_no, ok=False, detail=str(e)
+                )
+            )
+            failed += 1
+            continue
+        except Exception as e:  # pragma: no cover - defensive
+            db.rollback()
+            items.append(
+                BulkTransitionItem(
+                    case_id=case_id,
+                    case_no=case_no,
+                    ok=False,
+                    detail=f"{type(e).__name__}: {e}",
+                )
+            )
+            failed += 1
+            continue
+
+        items.append(
+            BulkTransitionItem(case_id=case_id, case_no=case_no, ok=True, detail="OK")
+        )
+        succeeded += 1
+
+    return BulkTransitionResult(
+        succeeded=succeeded, failed=failed, items=items
     )

@@ -70,6 +70,7 @@ export const MENU = {
   ADMIN_BACKUPS: 'admin.backups',
   ADMIN_SETTINGS: 'admin.settings',
   ADMIN_DIAGNOSTICS: 'admin.diagnostics',
+  ADMIN_BULK_REASSIGN: 'admin.bulk_reassign',
 } as const;
 
 // Pathname -> menu ID. Used by RouteGate so a user typing a URL
@@ -98,6 +99,7 @@ const PATH_MENU: Array<[RegExp, string]> = [
   [/^\/admin\/backups(\/|$)/, MENU.ADMIN_BACKUPS],
   [/^\/admin\/settings(\/|$)/, MENU.ADMIN_SETTINGS],
   [/^\/admin\/diagnostics(\/|$)/, MENU.ADMIN_DIAGNOSTICS],
+  [/^\/admin\/bulk-reassign(\/|$)/, MENU.ADMIN_BULK_REASSIGN],
 ];
 
 export function menuFromPath(pathname: string): string | null {
