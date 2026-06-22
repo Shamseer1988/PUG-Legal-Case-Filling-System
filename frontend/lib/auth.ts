@@ -13,6 +13,7 @@ export type Me = {
   divisions: number[];
   totp_enabled?: boolean;
   has_signature?: boolean;
+  locale?: 'en' | 'ar';
 };
 
 type State = {

@@ -23,6 +23,7 @@ from app.models.user import User
 from app.schemas.auth import (
     CapabilitiesResponse,
     ChangePasswordRequest,
+    LocaleUpdateRequest,
     LoginRequest,
     MeResponse,
     RefreshRequest,
@@ -130,6 +131,44 @@ def me(user: User = Depends(get_current_user)) -> MeResponse:
         divisions=[d.id for d in user.divisions],
         totp_enabled=user.totp_enabled,
         has_signature=bool(user.signature_path),
+        locale=user.locale or "en",
+    )
+
+
+@router.post("/me/locale", response_model=MeResponse)
+def update_my_locale(
+    payload: LocaleUpdateRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MeResponse:
+    """Phase 31: set the signed-in user's preferred locale.
+
+    Used by the language switcher on the profile page. The new
+    locale is also picked up by the notification email pipeline
+    on the next event so emails land in the user's preferred
+    language without an extra restart.
+    """
+    user.locale = payload.locale
+    audit_service.record_event(
+        db,
+        action="locale_change",
+        entity_type="User",
+        entity_id=user.id,
+        summary=f"Locale set to {payload.locale} for {user.email}",
+        actor=user,
+    )
+    db.commit()
+    return MeResponse(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role.name if user.role else "",
+        permissions=list(user.role.permissions) if user.role else [],
+        is_super=user.is_super,
+        divisions=[d.id for d in user.divisions],
+        totp_enabled=user.totp_enabled,
+        has_signature=bool(user.signature_path),
+        locale=user.locale,
     )
 
 

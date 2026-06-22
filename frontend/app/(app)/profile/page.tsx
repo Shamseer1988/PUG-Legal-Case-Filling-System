@@ -1,9 +1,15 @@
 'use client';
 
-import { CheckCircle2, KeyRound, PenLine, ShieldCheck, ShieldOff, Trash2, Upload } from 'lucide-react';
+import { CheckCircle2, Globe, KeyRound, PenLine, ShieldCheck, ShieldOff, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore, type Me } from '@/lib/auth';
+import {
+  LOCALE_LABELS,
+  SUPPORTED_LOCALES,
+  type Locale,
+  useT,
+} from '@/lib/i18n';
 
 type EnrollResponse = {
   secret: string;
@@ -15,6 +21,10 @@ export default function ProfilePage() {
   const me = useAuthStore((s) => s.me);
   const setMe = useAuthStore((s) => s.setMe);
   const token = useAuthStore((s) => s.accessToken);
+  const t = useT();
+  const [localeBusy, setLocaleBusy] = useState(false);
+  const [localeInfo, setLocaleInfo] = useState<string | null>(null);
+  const [localeErr, setLocaleErr] = useState<string | null>(null);
   const [enroll, setEnroll] = useState<EnrollResponse | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -182,6 +192,25 @@ export default function ProfilePage() {
       setSigErr((ex as ApiError).message);
     } finally {
       setSigBusy(false);
+    }
+  }
+
+  async function changeLocale(next: Locale) {
+    if (me?.locale === next) return;
+    setLocaleBusy(true);
+    setLocaleErr(null);
+    setLocaleInfo(null);
+    try {
+      const updated = await api<Me>('/api/v1/auth/me/locale', {
+        method: 'POST',
+        body: { locale: next },
+      });
+      setMe(updated);
+      setLocaleInfo(t('profile.language.saved'));
+    } catch (ex) {
+      setLocaleErr((ex as ApiError).message);
+    } finally {
+      setLocaleBusy(false);
     }
   }
 
@@ -364,6 +393,51 @@ export default function ProfilePage() {
             </p>
           </div>
         </form>
+      </section>
+
+      {/* -------- Language / Locale (Phase 31) -------- */}
+      <section className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-5 shadow-soft">
+        <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-400">
+          <Globe className="h-4 w-4" /> {t('profile.language')}
+        </h2>
+        <p className="mb-3 text-xs text-[rgb(var(--color-muted))]">
+          {t('profile.language.help')}
+        </p>
+        {localeErr && (
+          <div className="mb-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700 dark:text-rose-300">
+            {localeErr}
+          </div>
+        )}
+        {localeInfo && (
+          <div className="mb-2 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">
+            <CheckCircle2 className="-mt-0.5 mr-1 inline h-4 w-4" />
+            {localeInfo}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          {SUPPORTED_LOCALES.map((loc) => {
+            const isActive = (me?.locale ?? 'en') === loc;
+            return (
+              <button
+                key={loc}
+                type="button"
+                onClick={() => changeLocale(loc)}
+                disabled={localeBusy || isActive}
+                className={
+                  'inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition-colors ' +
+                  (isActive
+                    ? 'border-pug-gold-500 bg-pug-gold-500/15 text-pug-gold-700 dark:text-pug-gold-300'
+                    : 'border-[rgb(var(--color-border))] hover:bg-[rgb(var(--color-border))]/40')
+                }
+              >
+                {LOCALE_LABELS[loc]}
+                {isActive && (
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                )}
+              </button>
+            );
+          })}
+        </div>
       </section>
 
       {/* -------- Signature -------- */}

@@ -32,6 +32,11 @@ class MeResponse(BaseModel):
     divisions: list[int]
     totp_enabled: bool = False
     has_signature: bool = False
+    locale: str = "en"
+
+
+class LocaleUpdateRequest(BaseModel):
+    locale: str = Field(pattern="^(en|ar)$")
 
 
 class TotpEnrollResponse(BaseModel):

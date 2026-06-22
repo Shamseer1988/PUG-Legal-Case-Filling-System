@@ -17,6 +17,17 @@ from app.models.user import User
 from app.services import email_service
 
 EMAIL_TEMPLATE = "notification_email.html"
+# Phase 31: per-locale variants of the notification email. ``en``
+# is the default; falling back to it for unknown locales keeps the
+# pipeline robust if a new locale ships before its template does.
+_EMAIL_TEMPLATES_BY_LOCALE = {
+    "en": "notification_email.html",
+    "ar": "notification_email.ar.html",
+}
+
+
+def _template_for(locale: str) -> str:
+    return _EMAIL_TEMPLATES_BY_LOCALE.get((locale or "en").lower(), EMAIL_TEMPLATE)
 
 
 def _case_url(case_id: int) -> str:
@@ -57,18 +68,27 @@ def _emit(
     # take down the workflow transition that triggered it. The
     # transition has already committed; the email is best-effort.
     try:
+        # Phase 31: deliver the email in the user's preferred locale
+        # by picking the matching template variant. The template's
+        # own strings live in app/templates/email/.
+        locale = (user.locale or "en").lower()
+        is_rtl = locale == "ar"
+        action_label = "Open Case" if locale != "ar" else "فتح القضية"
         email_service.queue_email(
             db,
             to_emails=[user.email],
             subject=title,
-            template=EMAIL_TEMPLATE,
+            template=_template_for(locale),
             context={
                 "title": title,
                 "subtitle": "",
                 "lines": lines or ([body] if body else []),
                 "facts": facts or [],
                 "action_url": link,
-                "action_label": "Open Case",
+                "action_label": action_label,
+                "locale": locale,
+                "is_rtl": is_rtl,
+                "dir": "rtl" if is_rtl else "ltr",
             },
             event=event,
             related_case_id=related_case_id,

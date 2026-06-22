@@ -1,4 +1,5 @@
 import { AuthGate } from '@/components/AuthGate';
+import { LocaleDirection } from '@/components/LocaleDirection';
 import { RouteGate } from '@/components/RouteGate';
 import { Sidebar } from '@/components/Sidebar';
 import { Topbar } from '@/components/Topbar';
@@ -6,6 +7,7 @@ import { Topbar } from '@/components/Topbar';
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <AuthGate>
+      <LocaleDirection />
       <div className="flex min-h-screen">
         <Sidebar />
         <div className="flex min-w-0 flex-1 flex-col">

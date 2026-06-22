@@ -33,43 +33,51 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/auth';
 import { API_BASE } from '@/lib/api';
 import { MENU, useCapabilitiesStore } from '@/lib/capabilities';
+import { useT } from '@/lib/i18n';
 
 
 type Item = {
   href: string;
   label: string;
+  /** i18n key resolved via useT() at render time. Falls back to
+   *  ``label`` when the key isn't translated. */
+  i18nKey?: string;
   icon: React.ComponentType<{ className?: string }>;
   menuId: string;
 };
 
-type Group = { title: string; items: Item[] };
+type Group = { title: string; i18nKey?: string; items: Item[] };
 
 const GROUPS: Group[] = [
   {
     title: 'Workspace',
+    i18nKey: 'sidebar.workspace',
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, menuId: MENU.DASHBOARD },
-      { href: '/profile', label: 'My Profile', icon: User, menuId: MENU.PROFILE },
+      { href: '/dashboard', label: 'Dashboard', i18nKey: 'sidebar.dashboard', icon: LayoutDashboard, menuId: MENU.DASHBOARD },
+      { href: '/profile', label: 'My Profile', i18nKey: 'sidebar.profile', icon: User, menuId: MENU.PROFILE },
     ],
   },
   {
     title: 'Transactions',
+    i18nKey: 'sidebar.transactions',
     items: [
-      { href: '/cases', label: 'Cases', icon: FileText, menuId: MENU.CASES },
-      { href: '/approvals', label: 'Approvals Inbox', icon: Briefcase, menuId: MENU.APPROVALS },
-      { href: '/hearings', label: 'Hearings Calendar', icon: Calendar, menuId: MENU.HEARINGS },
-      { href: '/cash-requests', label: 'Cash Requests', icon: Banknote, menuId: MENU.CASH_REQUESTS },
+      { href: '/cases', label: 'Cases', i18nKey: 'sidebar.cases', icon: FileText, menuId: MENU.CASES },
+      { href: '/approvals', label: 'Approvals Inbox', i18nKey: 'sidebar.approvals', icon: Briefcase, menuId: MENU.APPROVALS },
+      { href: '/hearings', label: 'Hearings Calendar', i18nKey: 'sidebar.hearings', icon: Calendar, menuId: MENU.HEARINGS },
+      { href: '/cash-requests', label: 'Cash Requests', i18nKey: 'sidebar.cash_requests', icon: Banknote, menuId: MENU.CASH_REQUESTS },
     ],
   },
   {
     title: 'Insights',
+    i18nKey: 'sidebar.insights',
     items: [
-      { href: '/reports', label: 'Reports', icon: BarChart3, menuId: MENU.REPORTS },
-      { href: '/schedules', label: 'Scheduled Reports', icon: CalendarClock, menuId: MENU.SCHEDULED_REPORTS },
+      { href: '/reports', label: 'Reports', i18nKey: 'sidebar.reports', icon: BarChart3, menuId: MENU.REPORTS },
+      { href: '/schedules', label: 'Scheduled Reports', i18nKey: 'sidebar.scheduled_reports', icon: CalendarClock, menuId: MENU.SCHEDULED_REPORTS },
     ],
   },
   {
     title: 'Masters',
+    i18nKey: 'sidebar.masters',
     items: [
       { href: '/masters/divisions', label: 'Divisions', icon: Building2, menuId: MENU.MASTERS_DIVISIONS },
       { href: '/masters/banks', label: 'Banks', icon: Landmark, menuId: MENU.MASTERS_BANKS },
@@ -81,6 +89,7 @@ const GROUPS: Group[] = [
   },
   {
     title: 'Admin',
+    i18nKey: 'sidebar.admin',
     items: [
       { href: '/admin/users', label: 'Users', icon: Users, menuId: MENU.ADMIN_USERS },
       { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, menuId: MENU.ADMIN_ROLES },
@@ -101,6 +110,7 @@ export function Sidebar() {
   const clear = useAuthStore((s) => s.clear);
   const caps = useCapabilitiesStore((s) => s.caps);
   const clearCaps = useCapabilitiesStore((s) => s.clear);
+  const t = useT();
 
   const [logoErr, setLogoErr] = useState(false);
 
@@ -192,6 +202,7 @@ export function Sidebar() {
           if (visible.length === 0) return null;
 
           const isExpanded = expandedSections[g.title] ?? true;
+          const groupTitle = g.i18nKey ? t(g.i18nKey) : g.title;
 
           return (
             <div key={g.title} className="mb-2">
@@ -203,7 +214,7 @@ export function Sidebar() {
                   'group flex w-full items-center rounded-md px-2 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-[rgb(var(--color-muted))] transition-colors hover:text-[rgb(var(--color-fg))]',
                   collapsed && 'justify-center',
                 )}
-                title={collapsed ? g.title : undefined}
+                title={collapsed ? groupTitle : undefined}
               >
                 {!collapsed && (
                   <>
@@ -213,7 +224,7 @@ export function Sidebar() {
                         !isExpanded && '-rotate-90',
                       )}
                     />
-                    <span className="flex-1 text-left">{g.title}</span>
+                    <span className="flex-1 text-left">{groupTitle}</span>
                   </>
                 )}
                 {collapsed && (
@@ -232,11 +243,12 @@ export function Sidebar() {
                   {visible.map((it) => {
                     const Icon = it.icon;
                     const active = pathname === it.href || pathname.startsWith(it.href + '/');
+                    const itemLabel = it.i18nKey ? t(it.i18nKey) : it.label;
                     return (
                       <li key={it.href}>
                         <Link
                           href={it.href}
-                          title={collapsed ? it.label : undefined}
+                          title={collapsed ? itemLabel : undefined}
                           className={cn(
                             'group relative flex items-center rounded-md text-sm transition-colors duration-150',
                             collapsed
@@ -254,13 +266,13 @@ export function Sidebar() {
                               collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
                             )}
                           >
-                            {it.label}
+                            {itemLabel}
                           </span>
 
                           {/* Tooltip on hover when collapsed */}
                           {collapsed && (
                             <span className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-[rgb(var(--color-fg))] px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--color-bg))] shadow-lg group-hover:block">
-                              {it.label}
+                              {itemLabel}
                             </span>
                           )}
                         </Link>
@@ -310,7 +322,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={logout}
-          title="Sign out"
+          title={t('sidebar.signout')}
           className={cn(
             'group relative flex w-full items-center rounded-md text-[rgb(var(--color-muted))] transition-colors hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400',
             collapsed ? 'justify-center px-2 py-2' : 'gap-2 px-2 py-2',
@@ -323,13 +335,13 @@ export function Sidebar() {
               collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100',
             )}
           >
-            Sign out
+            {t('sidebar.signout')}
           </span>
 
           {/* Tooltip when collapsed */}
           {collapsed && (
             <span className="pointer-events-none absolute left-full z-50 ml-2 hidden whitespace-nowrap rounded-md bg-[rgb(var(--color-fg))] px-2.5 py-1.5 text-xs font-medium text-[rgb(var(--color-bg))] shadow-lg group-hover:block">
-              Sign out
+              {t('sidebar.signout')}
             </span>
           )}
         </button>
