@@ -14,6 +14,7 @@ from app.models.case import (
 from app.models.case_view import CaseView
 from app.models.closure import CaseClosure
 from app.models.court import CashRequest, CourtFiling, Hearing
+from app.models.job_run import JobRun
 from app.models.masters import (
     Bank,
     CaseType,
@@ -63,5 +64,6 @@ __all__ = [
     "AuditLog",
     "BackupJob",
     "RestoreJob",
+    "JobRun",
     "SettingsKV",
 ]

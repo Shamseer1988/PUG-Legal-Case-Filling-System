@@ -98,6 +98,7 @@ const GROUPS: Group[] = [
       { href: '/admin/backups', label: 'Backup & Restore', icon: HardDrive, menuId: MENU.ADMIN_BACKUPS },
       { href: '/admin/settings', label: 'System Settings', icon: Settings, menuId: MENU.ADMIN_SETTINGS },
       { href: '/admin/diagnostics', label: 'Health & Diagnostics', icon: Activity, menuId: MENU.ADMIN_DIAGNOSTICS },
+      { href: '/admin/jobs', label: 'Job Monitor', icon: CalendarClock, menuId: MENU.ADMIN_JOBS },
       { href: '/admin/bulk-reassign', label: 'Bulk Reassignment', icon: ArrowRightLeft, menuId: MENU.ADMIN_BULK_REASSIGN },
     ],
   },

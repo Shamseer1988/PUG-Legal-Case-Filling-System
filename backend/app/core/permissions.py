@@ -145,6 +145,7 @@ MENU_ADMIN_BACKUPS = "admin.backups"
 MENU_ADMIN_SETTINGS = "admin.settings"
 MENU_ADMIN_DIAGNOSTICS = "admin.diagnostics"
 MENU_ADMIN_BULK_REASSIGN = "admin.bulk_reassign"
+MENU_ADMIN_JOBS = "admin.jobs"
 
 # Action IDs (case-level + cash-request-level)
 ACTION_CASE_APPROVE_SALES_MGR = "case.approve.sales_mgr"
@@ -180,6 +181,7 @@ _FULL_ADMIN_MENUS = [
     MENU_ADMIN_SETTINGS,
     MENU_ADMIN_DIAGNOSTICS,
     MENU_ADMIN_BULK_REASSIGN,
+    MENU_ADMIN_JOBS,
 ]
 
 SCOPE_ALL = "all"
