@@ -80,6 +80,15 @@ class Hearing(Base, TimestampMixin):
     recorded_by_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), nullable=False
     )
+    # Phase 34: hearing reminder windows. Each timestamp is stamped
+    # the first time the scheduled tick fires a reminder for that
+    # window so we never spam (one ping per window per hearing).
+    reminder_24h_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    reminder_1h_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class CashRequest(Base, TimestampMixin):

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.models.case import Case
-from app.models.court import CashRequest
+from app.models.court import CashRequest, Hearing
 from app.models.notification import Notification
 from app.models.user import User
 from app.services import email_service
@@ -353,6 +353,48 @@ def on_case_sla_breached(db: Session, case: Case) -> None:
         ],
         facts=facts,
     )
+
+
+def on_hearing_reminder(
+    db: Session, *, hearing: Hearing, case: Case, window: str
+) -> None:
+    """Phase 34: ``window`` is "24h" or "1h". Fires once per window
+    per hearing thanks to the gating flags on the Hearing row.
+
+    Targets the Accountant who owns the case and the Auditor mapped
+    to it - both internal Users who care about hearing dates. The
+    Lawyer entity is a master record, not a User, so it has no
+    in-app channel; emailing the lawyer can be added later as a
+    direct send.
+    """
+    targets = {case.created_by_id, case.auditor_id}
+    when = hearing.hearing_date
+    when_str = when.strftime("%Y-%m-%d %H:%M UTC") if when else "the scheduled time"
+    pretty_window = "in 24 hours" if window == "24h" else "in 1 hour"
+    title = f"Hearing reminder ({window}): {case.case_no}"
+    body = f"{hearing.hearing_type or 'Hearing'} {pretty_window} at {when_str}."
+    facts = _case_facts(case)
+    facts.append(("Hearing", hearing.hearing_type or "-"))
+    facts.append(("When", when_str))
+    if hearing.location:
+        facts.append(("Location", hearing.location))
+    for uid in targets:
+        if uid:
+            _emit(
+                db,
+                user_id=uid,
+                title=title,
+                body=body,
+                link=_case_url(case.id),
+                event="hearing.reminder",
+                related_case_id=case.id,
+                lines=[
+                    f"A {hearing.hearing_type or 'hearing'} is scheduled {pretty_window}.",
+                    f"Date: {when_str}.",
+                    f"Location: {hearing.location}" if hearing.location else "",
+                ],
+                facts=facts,
+            )
 
 
 def on_cash_request_created(db: Session, cash: CashRequest, case: Case) -> None:

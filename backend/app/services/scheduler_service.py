@@ -12,6 +12,7 @@ _scheduler: BackgroundScheduler | None = None
 TICK_JOB_ID = "scheduled-reports-tick"
 EMAIL_QUEUE_JOB_ID = "email-queue-tick"
 SLA_JOB_ID = "sla-breach-tick"
+HEARING_JOB_ID = "hearing-reminder-tick"
 
 
 def start() -> None:
@@ -51,9 +52,21 @@ def start() -> None:
         max_instances=1,
         coalesce=True,
     )
+    # Phase 34: hearing reminder scanner. 5-minute interval is
+    # fine - the 1h window has a 5-minute slack that's well below
+    # human response time and the 24h window is even more forgiving.
+    _scheduler.add_job(
+        _hearing_tick,
+        "interval",
+        seconds=300,
+        id=HEARING_JOB_ID,
+        replace_existing=True,
+        max_instances=1,
+        coalesce=True,
+    )
     _scheduler.start()
     logger.info(
-        "Scheduler started (reports=60s, email=10s, sla=300s)"
+        "Scheduler started (reports=60s, email=10s, sla=300s, hearings=300s)"
     )
 
 
@@ -115,6 +128,25 @@ def _sla_tick() -> None:
             )
     except Exception as e:  # pragma: no cover (defensive)
         logger.exception("SLA tick failed: {}", e)
+    finally:
+        db.close()
+
+
+def _hearing_tick() -> None:
+    """Phase 34: send any due hearing reminders."""
+    from app.db.session import SessionLocal
+    from app.services import hearing_reminder_service
+
+    db = SessionLocal()
+    try:
+        stats = hearing_reminder_service.scan_and_notify(db)
+        if stats["sent_24h"] or stats["sent_1h"]:
+            logger.info(
+                "Hearing tick: scanned={scanned} sent_24h={sent_24h} sent_1h={sent_1h}",
+                **stats,
+            )
+    except Exception as e:  # pragma: no cover (defensive)
+        logger.exception("Hearing reminder tick failed: {}", e)
     finally:
         db.close()
 
