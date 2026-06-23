@@ -28,6 +28,14 @@ class User(Base, TimestampMixin):
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_super: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Phase 37: "All Companies" flag - when true the user is
+    # treated as belonging to every division for data-scope
+    # purposes (cases list, dashboard, inbox, signatory picker)
+    # without granting the bypass-all-permissions powers of
+    # ``is_super``. Mirrors Lawyer.is_all_divisions.
+    is_all_divisions: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False
+    )
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Phase 12 - TOTP 2FA

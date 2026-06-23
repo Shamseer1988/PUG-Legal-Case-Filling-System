@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from app.core.attachment_categories import normalise_category
+from app.core.data_scope import allowed_division_ids
 from app.core.deps import get_current_user, require_permission
 from app.core.permissions import CASES_CREATE, CASES_READ, CASES_SIGNED_FORM
 from app.db.session import get_db
@@ -63,16 +64,13 @@ router = APIRouter(prefix="/cases", tags=["cases"])
 
 def _scoped_query(db: Session, user: User):
     q = db.query(Case)
-    if user.is_super:
+    allowed = allowed_division_ids(user)
+    if allowed is None:
         return q
-    # Scope by division mapping unless user has wildcard / admin permissions
-    perms = user.role.permissions if user.role else []
-    if "*" in perms:
-        return q
-    division_ids = [d.id for d in user.divisions]
-    if not division_ids:
+    if not allowed:
+        # No division mapping -> can only see their own drafts.
         return q.filter(Case.created_by_id == user.id)
-    return q.filter(Case.division_id.in_(division_ids))
+    return q.filter(Case.division_id.in_(allowed))
 
 
 @router.get("", response_model=list[CaseListItem])

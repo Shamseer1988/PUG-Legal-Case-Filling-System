@@ -13,6 +13,7 @@ type User = {
   role_name: string;
   is_active: boolean;
   is_super: boolean;
+  is_all_divisions: boolean;
   division_ids: number[];
 };
 
@@ -25,6 +26,7 @@ type Draft = {
   role_id: number | null;
   is_active: boolean;
   is_super: boolean;
+  is_all_divisions: boolean;
   division_ids: number[];
 };
 
@@ -35,6 +37,7 @@ const EMPTY: Draft = {
   role_id: null,
   is_active: true,
   is_super: false,
+  is_all_divisions: false,
   division_ids: [],
 };
 
@@ -82,6 +85,7 @@ export default function UsersPage() {
       role_id: u.role_id,
       is_active: u.is_active,
       is_super: u.is_super,
+      is_all_divisions: u.is_all_divisions,
       division_ids: u.division_ids,
     });
     setEditing(u);
@@ -97,18 +101,22 @@ export default function UsersPage() {
   async function save() {
     setError(null);
     try {
+      // "All Companies" wins on the server too - clear any
+      // accidentally-selected per-division ids before sending.
+      const division_ids = draft.is_all_divisions ? [] : draft.division_ids;
       if (editing) {
         const body: Record<string, unknown> = {
           full_name: draft.full_name,
           role_id: draft.role_id,
           is_active: draft.is_active,
           is_super: draft.is_super,
-          division_ids: draft.division_ids,
+          is_all_divisions: draft.is_all_divisions,
+          division_ids,
         };
         if (draft.password) body.password = draft.password;
         await api(`/api/v1/users/${editing.id}`, { method: 'PATCH', body });
       } else {
-        await api('/api/v1/users', { method: 'POST', body: draft });
+        await api('/api/v1/users', { method: 'POST', body: { ...draft, division_ids } });
       }
       cancel();
       reload();
@@ -199,27 +207,60 @@ export default function UsersPage() {
                 ))}
               </select>
             </Labeled>
-            <Labeled label="Divisions">
-              <select
-                multiple
-                value={draft.division_ids.map(String)}
-                onChange={(e) =>
-                  setDraft({
-                    ...draft,
-                    division_ids: Array.from(e.target.selectedOptions).map((o) =>
-                      Number(o.value),
-                    ),
-                  })
-                }
-                className={inputCls + ' min-h-[6rem]'}
-              >
-                {divisions.map((d) => (
-                  <option key={d.value} value={d.value}>
-                    {d.label}
-                  </option>
-                ))}
-              </select>
-            </Labeled>
+            <fieldset className="md:col-span-2 rounded-md border border-[rgb(var(--color-border))] p-3">
+              <legend className="px-1 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                Divisions
+              </legend>
+              <label className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                <input
+                  type="checkbox"
+                  checked={draft.is_all_divisions}
+                  onChange={(e) =>
+                    setDraft({
+                      ...draft,
+                      // Flipping "All Companies" wipes the per-row
+                      // checkboxes so there's no stale state if
+                      // the flag flips back off.
+                      is_all_divisions: e.target.checked,
+                      division_ids: [],
+                    })
+                  }
+                  className="h-4 w-4"
+                />
+                All Companies
+              </label>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {divisions.map((d) => {
+                  const checked =
+                    draft.is_all_divisions ||
+                    draft.division_ids.includes(Number(d.value));
+                  return (
+                    <label
+                      key={d.value}
+                      className={`flex items-center gap-2 text-sm ${
+                        draft.is_all_divisions ? 'opacity-60' : ''
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        disabled={draft.is_all_divisions}
+                        checked={checked}
+                        onChange={() => {
+                          if (draft.is_all_divisions) return;
+                          const id = Number(d.value);
+                          const next = draft.division_ids.includes(id)
+                            ? draft.division_ids.filter((x) => x !== id)
+                            : [...draft.division_ids, id];
+                          setDraft({ ...draft, division_ids: next });
+                        }}
+                        className="h-4 w-4"
+                      />
+                      {d.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
             <div className="flex flex-col gap-2">
               <label className="flex items-center gap-2 text-sm">
                 <input

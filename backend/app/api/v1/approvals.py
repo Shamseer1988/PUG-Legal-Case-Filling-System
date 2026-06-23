@@ -3,6 +3,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.data_scope import allowed_division_ids
 from app.core.deps import get_current_user
 from app.core.workflow import WORKFLOW_STAGES
 from app.db.session import get_db
@@ -96,10 +97,9 @@ def workflow_descriptor(_: User = Depends(get_current_user)) -> WorkflowDescript
 def _scoped_case(db: Session, user: User, case_id: int) -> Case | None:
     """Return the case if it exists AND the user is within division scope."""
     q = db.query(Case)
-    if not user.is_super:
-        perms = user.role.permissions if user.role else []
-        if "*" not in perms and user.divisions:
-            q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+    allowed = allowed_division_ids(user)
+    if allowed is not None and allowed:
+        q = q.filter(Case.division_id.in_(allowed))
     return q.filter(Case.id == case_id).first()
 
 

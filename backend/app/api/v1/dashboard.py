@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.core.data_scope import allowed_division_ids
 from app.core.deps import get_current_user
 from app.db.session import get_db
 from app.models.case import Case
@@ -34,37 +35,31 @@ router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
 def _scope_cases(db: Session, user: User):
     q = db.query(Case)
-    if user.is_super:
+    allowed = allowed_division_ids(user)
+    if allowed is None:
         return q
-    perms = user.role.permissions if user.role else []
-    if "*" in perms:
-        return q
-    if user.divisions:
-        q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+    if allowed:
+        q = q.filter(Case.division_id.in_(allowed))
     return q
 
 
 def _scope_cash(db: Session, user: User):
     q = db.query(CashRequest).join(Case, Case.id == CashRequest.case_id)
-    if user.is_super:
+    allowed = allowed_division_ids(user)
+    if allowed is None:
         return q
-    perms = user.role.permissions if user.role else []
-    if "*" in perms:
-        return q
-    if user.divisions:
-        q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+    if allowed:
+        q = q.filter(Case.division_id.in_(allowed))
     return q
 
 
 def _scope_hearings(db: Session, user: User):
     q = db.query(Hearing, Case).join(Case, Case.id == Hearing.case_id)
-    if user.is_super:
+    allowed = allowed_division_ids(user)
+    if allowed is None:
         return q
-    perms = user.role.permissions if user.role else []
-    if "*" in perms:
-        return q
-    if user.divisions:
-        q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+    if allowed:
+        q = q.filter(Case.division_id.in_(allowed))
     return q
 
 

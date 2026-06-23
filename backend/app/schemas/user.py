@@ -33,6 +33,8 @@ class UserBase(BaseModel):
     role_id: int
     is_active: bool = True
     is_super: bool = False
+    # Phase 37
+    is_all_divisions: bool = False
 
 
 class UserCreate(UserBase):
@@ -45,6 +47,7 @@ class UserUpdate(BaseModel):
     role_id: int | None = None
     is_active: bool | None = None
     is_super: bool | None = None
+    is_all_divisions: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
     division_ids: list[int] | None = None
 
@@ -58,5 +61,6 @@ class UserRead(BaseModel):
     role_name: str
     is_active: bool
     is_super: bool
+    is_all_divisions: bool
     last_login_at: datetime | None
     division_ids: list[int]

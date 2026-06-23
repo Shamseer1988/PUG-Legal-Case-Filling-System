@@ -52,7 +52,14 @@ def user_options(
     out: list[UserOption] = []
     for u in rows:
         div_ids = [d.id for d in u.divisions]
-        if apply_division_filter and division_id not in div_ids:
+        # Phase 37: an ``is_all_divisions`` user is visible on every
+        # division's signatory picker even if their mapping list is
+        # empty.
+        if (
+            apply_division_filter
+            and division_id not in div_ids
+            and not u.is_all_divisions
+        ):
             continue
         out.append(
             UserOption(
@@ -75,6 +82,7 @@ def _to_read(user: User) -> UserRead:
         role_name=user.role.name if user.role else "",
         is_active=user.is_active,
         is_super=user.is_super,
+        is_all_divisions=user.is_all_divisions,
         last_login_at=user.last_login_at,
         division_ids=[d.id for d in user.divisions],
     )
@@ -106,10 +114,14 @@ def create_user(
         role_id=payload.role_id,
         is_active=payload.is_active,
         is_super=payload.is_super,
+        is_all_divisions=payload.is_all_divisions,
     )
     db.add(user)
     db.flush()
-    for did in payload.division_ids:
+    # is_all_divisions wins - drop per-division mappings to keep
+    # the row's state coherent (matches Lawyer semantics).
+    division_ids = [] if payload.is_all_divisions else list(payload.division_ids)
+    for did in division_ids:
         db.add(UserDivisionMap(user_id=user.id, division_id=did))
     audit_service.audit_create(
         db,
@@ -122,7 +134,8 @@ def create_user(
             "role_id": user.role_id,
             "is_active": user.is_active,
             "is_super": user.is_super,
-            "division_ids": list(payload.division_ids),
+            "is_all_divisions": user.is_all_divisions,
+            "division_ids": division_ids,
         },
     )
     db.commit()
@@ -158,6 +171,7 @@ def update_user(
         "role_id": user.role_id,
         "is_active": user.is_active,
         "is_super": user.is_super,
+        "is_all_divisions": user.is_all_divisions,
         "division_ids": [d.id for d in user.divisions],
     }
 
@@ -173,7 +187,13 @@ def update_user(
     for k, v in data.items():
         setattr(user, k, v)
 
-    if division_ids is not None:
+    # When "All Companies" wins, drop every per-division mapping so
+    # the row's state stays coherent. Otherwise apply whatever list
+    # the client sent.
+    if user.is_all_divisions:
+        db.query(UserDivisionMap).filter(UserDivisionMap.user_id == user.id).delete()
+        division_ids = []
+    elif division_ids is not None:
         db.query(UserDivisionMap).filter(UserDivisionMap.user_id == user.id).delete()
         for did in division_ids:
             db.add(UserDivisionMap(user_id=user.id, division_id=did))
@@ -183,6 +203,7 @@ def update_user(
         "role_id": user.role_id,
         "is_active": user.is_active,
         "is_super": user.is_super,
+        "is_all_divisions": user.is_all_divisions,
         "division_ids": division_ids if division_ids is not None else before["division_ids"],
     }
     audit_service.audit_update(

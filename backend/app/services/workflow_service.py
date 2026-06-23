@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy.orm import Session
 
+from app.core.data_scope import allowed_division_ids
 from app.core.permissions import has_permission
 from app.core.workflow import (
     APPROVAL_STAGE_ORDER,
@@ -392,11 +393,15 @@ def can_act(user: User, case: Case) -> bool:
         return True
     perms = user.role.permissions if user.role else []
     cfg = get_stage(case.current_stage)
+    allowed = allowed_division_ids(user)
+    user_div_ids = set(allowed) if allowed is not None else None  # None = all
     if not cfg:
         # Accountant clarification: any user with cases:create on their own case
         if case.current_stage == STAGE_ACCOUNTANT and case.status == CASE_STATUS_CLARIFICATION:
             return has_permission(perms, "cases:create") and (
-                case.created_by_id == user.id or case.division_id in {d.id for d in user.divisions}
+                case.created_by_id == user.id
+                or user_div_ids is None
+                or case.division_id in user_div_ids
             )
         # Lawyer stage with status=Filed: an explicit lawyer-approve
         # action becomes available to anyone with cases:approve:lawyer.
@@ -405,9 +410,9 @@ def can_act(user: User, case: Case) -> bool:
         return False
     if not has_permission(perms, cfg.permission):
         return False
-    # If user has division scope and case is outside it, deny (unless wildcard)
-    if "*" not in perms and user.divisions:
-        if case.division_id not in {d.id for d in user.divisions}:
+    # If user has division scope and case is outside it, deny.
+    if user_div_ids is not None and user_div_ids:
+        if case.division_id not in user_div_ids:
             return False
     return True
 
@@ -429,6 +434,7 @@ def inbox_for(db: Session, user: User) -> list[Case]:
         return q.order_by(Case.id.desc()).all()
 
     perms = user.role.permissions if user.role else []
+    allowed = allowed_division_ids(user)
     actionable_stages: list[str] = []
     for cfg in WORKFLOW_STAGES:
         if has_permission(perms, cfg.permission):
@@ -440,15 +446,17 @@ def inbox_for(db: Session, user: User) -> list[Case]:
             Case.status.in_([CASE_STATUS_SUBMITTED, CASE_STATUS_IN_REVIEW]),
             Case.current_stage.in_(actionable_stages),
         )
-        if user.divisions and "*" not in perms:
-            sub_q = sub_q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+        if allowed is not None and allowed:
+            sub_q = sub_q.filter(Case.division_id.in_(allowed))
         rows.extend(sub_q.all())
 
     # Clarifications come back to the Accountant who created them (or anyone in their division)
     if has_permission(perms, "cases:create"):
         clar_q = q.filter(Case.status == CASE_STATUS_CLARIFICATION)
-        if user.divisions:
-            clar_q = clar_q.filter(Case.division_id.in_([d.id for d in user.divisions]))
+        if allowed is None:
+            pass  # cross-division - see every clarification
+        elif allowed:
+            clar_q = clar_q.filter(Case.division_id.in_(allowed))
         else:
             clar_q = clar_q.filter(Case.created_by_id == user.id)
         rows.extend(clar_q.all())
