@@ -238,22 +238,42 @@ export function CaseForm({ caseId }: { caseId?: number }) {
 
     try {
       let id = caseId;
+      let saved: CaseFull;
       if (id) {
-        await api(`/api/v1/cases/${id}`, { method: 'PATCH', body: toPayload() });
+        saved = await api<CaseFull>(`/api/v1/cases/${id}`, {
+          method: 'PATCH',
+          body: toPayload(),
+        });
       } else {
-        const created = await api<CaseFull>('/api/v1/cases', {
+        saved = await api<CaseFull>('/api/v1/cases', {
           method: 'POST',
           body: toPayload(),
         });
-        id = created.id;
+        id = saved.id;
       }
       if (thenSubmit) {
-        await api(`/api/v1/cases/${id}/submit`, { method: 'POST' });
+        // Submit returns the post-transition CaseRead; use that
+        // for the same local-state refresh.
+        saved = await api<CaseFull>(`/api/v1/cases/${id}/submit`, {
+          method: 'POST',
+        });
         setInfo(`Case submitted. Now awaiting Sales Manager approval.`);
       } else {
         setInfo('Draft saved.');
       }
-      router.push(`/cases/${id}`);
+      // Phase 38 fix: every PATCH replaces cheque rows server-side
+      // (with brand-new ids), so we MUST mirror the response back
+      // into local state - otherwise the cheque paperclip stays
+      // disabled because its ``chequeId`` prop still points at the
+      // old (or undefined) id and ``meta`` is stale.
+      setMeta(saved);
+      setDraft(toDraft(saved));
+      // ``router.push`` is a no-op when the URL doesn't change
+      // (PATCH on the same case_id), but it's the right thing to
+      // do after the initial POST so the URL reflects the new
+      // case_id. ``router.refresh`` is kept for any server-rendered
+      // shell that might cache fragments of the case page.
+      if (!caseId) router.push(`/cases/${id}`);
       router.refresh();
     } catch (e) {
       setErr((e as ApiError).message);
