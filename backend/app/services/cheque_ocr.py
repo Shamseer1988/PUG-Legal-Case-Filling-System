@@ -211,24 +211,61 @@ def _vision_llm_extract(blob: bytes, mime: str) -> dict[str, Any] | None:
 # ---------------------------------------------------------------------------
 # Regex-based field extraction from OCR text
 # ---------------------------------------------------------------------------
+# Cheque-number candidates: the explicit label form
+# ("Cheque No.: 01001197" or "Chq# A1234") AND a bare-number
+# fallback for when Tesseract puts the label and the value on
+# different lines. We always reject numbers that look like dates
+# (we test the date regexes first in the extractor).
 _RX_CHEQUE_NO = re.compile(
     r"(?:cheque|check|chq|cqe)\s*(?:no\.?|number|#)?[:\s]*([A-Z0-9-]{4,})",
     re.IGNORECASE,
 )
+# Bare 6-12 digit run, used as a fallback. The extractor only
+# applies it after pulling dates out so a date string can't be
+# mistaken for a cheque number.
+_RX_BARE_NUMBER = re.compile(r"\b(\d{6,12})\b")
+
+# Amount patterns. The labelled form covers "Amount: 1,250.75".
+# The currency-prefixed form covers "QR 80,000.00" / "AED 1,250.75".
+# The asterisk-wrapped form covers cheques where the figure is
+# printed between asterisks as a tamper-stop ("**80,000.00**").
 _RX_AMOUNT = re.compile(
-    r"(?:amount|amt|sum|total)[:\s]*(?:AED|USD|SAR|QAR|OMR|BHD|KWD|INR|\$|€|£)?\s*"
+    r"(?:amount|amt|sum|total)[:\s]*(?:AED|USD|SAR|QAR|QR|OMR|BHD|KWD|INR|\$|€|£)?\s*"
     r"([0-9]{1,3}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,2})?)",
     re.IGNORECASE,
 )
+_RX_AMOUNT_CURRENCY = re.compile(
+    r"(?:AED|USD|SAR|QAR|QR|OMR|BHD|KWD|INR|\$|€|£|ر\.?ق)\s*"
+    r"([0-9]{1,3}(?:[,\s][0-9]{3})*(?:\.[0-9]{1,2})?)",
+    re.IGNORECASE,
+)
+_RX_AMOUNT_STARRED = re.compile(r"\*+\s*([0-9]{1,3}(?:[,][0-9]{3})*(?:\.[0-9]{1,2})?)\s*\*+")
+
 _RX_DATE_ISO = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
 _RX_DATE_SLASH = re.compile(r"\b(\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4})\b")
 _RX_REASON = re.compile(
     r"(?:reason|cause|remark)\s*(?:for\s+return)?[:\s]*([^\n\r]{4,200})",
     re.IGNORECASE,
 )
+# Bank-name detector. Covers the UAE, Qatar, Saudi, Oman, Bahrain
+# and Kuwait majors so the extractor maps an OCR'd "Commercial
+# Bank" / "Doha Bank" / "QNB" onto the right ``banks`` master row
+# when one exists.
 _RX_BANK_HINT = re.compile(
-    r"\b(?:emirates\s+nbd|first\s+abu\s+dhabi\s+bank|fab\b|adcb|hsbc|"
-    r"mashreq|rakbank|adib|noor\s+bank|cbd|enbd)\b",
+    r"\b(?:"
+    # UAE
+    r"emirates\s+nbd|enbd|first\s+abu\s+dhabi\s+bank|\bfab\b|adcb|hsbc|"
+    r"mashreq|rakbank|adib|noor\s+bank|cbd|"
+    # Qatar
+    r"commercial\s+bank\b|qnb|qatar\s+national\s+bank|doha\s+bank|"
+    r"qatar\s+islamic\s+bank|qib|qiib|al\s+khaliji|ahli\s+bank|"
+    # Saudi
+    r"al\s+rajhi|sab\b|saudi\s+british\s+bank|riyad\s+bank|albilad|"
+    r"alinma|snb\b|saudi\s+national\s+bank|"
+    # Oman / Bahrain / Kuwait
+    r"bank\s+muscat|nbo\b|sohar\s+international|ahli\s+united|nbk\b|"
+    r"kuwait\s+finance\s+house|kfh\b|gulf\s+bank"
+    r")\b",
     re.IGNORECASE,
 )
 
@@ -285,21 +322,40 @@ def _extract_from_text(
         res.warnings.append("OCR produced no text")
         return res
 
+    # Date first - the bare-number cheque-no fallback needs to
+    # avoid swallowing a digit run that's really a date.
+    date_match = _RX_DATE_ISO.search(text) or _RX_DATE_SLASH.search(text)
+    date_span: tuple[int, int] | None = None
+    if date_match:
+        d = _parse_date(date_match.group(1))
+        if d is not None:
+            res.cheque_date = d
+            date_span = date_match.span()
+
+    # Cheque number: labelled form first, then a bare 6-12 digit
+    # fallback so we still catch the MICR-line number when OCR
+    # puts the "Cheque No." label and the value on separate lines.
     m = _RX_CHEQUE_NO.search(text)
     if m:
         res.cheque_number = m.group(1).strip().upper()
+    else:
+        for bare in _RX_BARE_NUMBER.finditer(text):
+            if date_span and bare.start() >= date_span[0] and bare.end() <= date_span[1]:
+                continue
+            res.cheque_number = bare.group(1)
+            break
 
-    m = _RX_AMOUNT.search(text)
-    if m:
-        amt = _parse_amount(m.group(1))
-        if amt is not None:
-            res.amount = amt
-
-    m = _RX_DATE_ISO.search(text) or _RX_DATE_SLASH.search(text)
-    if m:
-        d = _parse_date(m.group(1))
-        if d is not None:
-            res.cheque_date = d
+    # Amount: labelled, currency-prefixed and asterisk-wrapped
+    # forms - whichever matches first wins.
+    amt = None
+    for rx in (_RX_AMOUNT, _RX_AMOUNT_CURRENCY, _RX_AMOUNT_STARRED):
+        m = rx.search(text)
+        if m:
+            amt = _parse_amount(m.group(1))
+            if amt is not None:
+                break
+    if amt is not None:
+        res.amount = amt
 
     # Phase 38: bounce_reason is intentionally NOT pulled from cheque
     # OCR - the reason lives on the bank return letter (now stored
@@ -384,6 +440,10 @@ def extract_fields(
         return ChequeOcrResult(
             success=False,
             engine="none",
-            warnings=["No OCR engine available on this host"],
+            warnings=[
+                "No OCR engine available on this server. "
+                "Either set OCR_VISION_API_KEY (recommended) or "
+                "install tesseract-ocr + pytesseract + Pillow."
+            ],
         )
     return _extract_from_text(db, text, engine="tesseract")

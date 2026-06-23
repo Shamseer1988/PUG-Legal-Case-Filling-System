@@ -145,7 +145,16 @@ export function ChequeAttachmentButton({
           .join(', ');
         setInfo(`Auto-filled from cheque image: ${filled || '(no fields matched)'}`);
       } else {
-        setInfo('Attached. OCR could not read the cheque - fill the row manually.');
+        // Surface the specific OCR warning (no engine vs. engine
+        // ran but matched nothing) so the operator knows what to
+        // do - install Tesseract, set OCR_VISION_API_KEY, or
+        // simply fill the row by hand.
+        const detail = (ocr.warnings && ocr.warnings.join(' ')) || '';
+        setInfo(
+          detail
+            ? `Attached. ${detail} You can also fill the row manually.`
+            : 'Attached. OCR could not read the cheque - fill the row manually.',
+        );
       }
     } catch (e) {
       setErr((e as Error).message);

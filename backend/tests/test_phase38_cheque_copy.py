@@ -168,6 +168,61 @@ def test_cheque_attachment_upload_drops_is_bank_return_form_param(client) -> Non
     assert r.json()["attachment"]["is_bank_return_letter"] is False
 
 
+def test_ocr_no_engine_warning_is_actionable(client) -> None:
+    """When no engine is available, the warning must tell the
+    operator what to do (set OCR_VISION_API_KEY or install
+    Tesseract) - not just "OCR failed"."""
+    from app.services import cheque_ocr
+
+    c, SessionLocal = client
+    db = SessionLocal()
+    try:
+        res = cheque_ocr.extract_fields(db, blob=b"PNGDATA", mime="image/png")
+        assert res.success is False
+        joined = " ".join(res.warnings).lower()
+        assert "ocr_vision_api_key" in joined or "tesseract" in joined
+    finally:
+        db.close()
+
+
+def test_ocr_handles_qatar_commercial_bank_layout(client) -> None:
+    """Regression coverage for the user-supplied Commercial Bank
+    of Qatar cheque: bilingual layout, asterisk-wrapped amount,
+    DD-MM-YYYY date, label and number on different lines."""
+    from app.services import cheque_ocr
+
+    c, SessionLocal = client
+    db = SessionLocal()
+    try:
+        # Roughly what Tesseract would extract from the user's
+        # cheque - labels and values typically land on adjacent
+        # lines, the amount is between asterisks, the bank name
+        # appears in the header.
+        text = (
+            "COMMERCIAL BANK\n"
+            "The Commercial Bank (P.S.Q.C.)\n"
+            "Cheque No.\n"
+            "01001197\n"
+            "Date 23-06-2026\n"
+            "Pay HAK CORPORATE B\n"
+            "Eighty Thousand Only\n"
+            "QR **80,000.00**\n"
+        )
+        res = cheque_ocr._extract_from_text(db, text, engine="test")
+        # cheque number arrives via the bare-number fallback
+        assert res.cheque_number == "01001197"
+        # amount arrives via the asterisk-wrapped pattern
+        assert str(res.amount) == "80000.00"
+        # date is the DD-MM-YYYY form
+        assert res.cheque_date.isoformat() == "2026-06-23"
+        # bank-hint regex now covers "Commercial Bank"
+        assert res.bank_name and "commercial" in res.bank_name.lower()
+        # bounce_reason is never populated from a cheque image
+        assert res.bounce_reason is None
+    finally:
+        db.close()
+
+
 def test_bank_return_letter_is_a_valid_case_category(client) -> None:
     """Phase 38: Bank Return Letter joins the fixed category list
     so it shows up as its own tile on the case Attachments grid."""
