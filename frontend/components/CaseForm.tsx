@@ -217,7 +217,12 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       // number, so each row gets a server-side id and the cheque-
       // copy paperclip becomes attachable right after Save. Submit
       // (not save) enforces non-empty numbers.
-      cheques: draft.cheques.map(({ id: _id, ...c }) => ({
+      //
+      // CRITICAL: send each row's id so the backend can diff-
+      // merge instead of clear-and-rebuild. Without this, every
+      // PATCH cascade-deletes the ChequeAttachment rows linked to
+      // the cheques.
+      cheques: draft.cheques.map((c) => ({
         ...c,
         amount: c.amount || '0',
         cheque_date: c.cheque_date || null,

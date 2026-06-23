@@ -12,7 +12,7 @@ from app.models.case import (
     Cheque,
 )
 from app.models.user import User
-from app.schemas.case import CaseCreate, CaseUpdate, ChequeCreate
+from app.schemas.case import CaseCreate, CaseUpdate, ChequeCreate, ChequeUpdate
 
 CASE_NO_PREFIX = "PUG-LEGAL"
 
@@ -29,11 +29,45 @@ def next_case_no(db: Session, year: int | None = None) -> str:
     return f"{CASE_NO_PREFIX}-{year}-{seq.last_number:04d}"
 
 
-def _apply_cheques(db: Session, case: Case, payload: list[ChequeCreate]) -> None:
-    case.cheques.clear()
+def _apply_cheques(db: Session, case: Case, payload: list[ChequeUpdate]) -> None:
+    """Phase 38: diff-merge cheque rows by id.
+
+    Earlier revisions did ``case.cheques.clear()`` then re-appended
+    a fresh ``Cheque`` per payload row. That cascade-deleted every
+    ``ChequeAttachment`` (linked via ``cheque_id`` FK with
+    ``ondelete=CASCADE``) on every save, so any cheque-copy the
+    user had attached vanished the next time they touched the form.
+
+    Now:
+
+    - Each existing cheque is keyed by its id.
+    - Each payload row with a matching id is updated in place
+      (attachments stay intact).
+    - Each payload row without an id (or with an unknown id) is
+      created fresh.
+    - Each existing cheque whose id is missing from the payload is
+      removed - this is the intended behaviour when the user
+      actually deletes a row; cascade then drops its attachments.
+    """
+    existing_by_id: dict[int, Cheque] = {c.id: c for c in list(case.cheques)}
+    kept_ids: set[int] = set()
+
+    for item in payload:
+        cid = item.id
+        data = item.model_dump(exclude={"id"})
+        if cid is not None and cid in existing_by_id:
+            row = existing_by_id[cid]
+            for k, v in data.items():
+                setattr(row, k, v)
+            kept_ids.add(cid)
+        else:
+            case.cheques.append(Cheque(**data))
+
+    for cid, row in existing_by_id.items():
+        if cid not in kept_ids:
+            case.cheques.remove(row)
+
     db.flush()
-    for c in payload:
-        case.cheques.append(Cheque(**c.model_dump()))
 
 
 def create_case(db: Session, payload: CaseCreate, current_user: User) -> Case:
@@ -62,7 +96,7 @@ def update_case(db: Session, case: Case, payload: CaseUpdate) -> Case:
     for k, v in data.items():
         setattr(case, k, v)
     if cheques is not None:
-        _apply_cheques(db, case, [ChequeCreate(**c) for c in cheques])
+        _apply_cheques(db, case, [ChequeUpdate(**c) for c in cheques])
     db.commit()
     db.refresh(case)
     return case

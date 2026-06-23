@@ -223,6 +223,116 @@ def test_ocr_handles_qatar_commercial_bank_layout(client) -> None:
         db.close()
 
 
+def test_cheque_attachments_survive_a_case_patch(client) -> None:
+    """The bug the user reported: every PATCH on a case used to
+    clear and rebuild the cheque rows, which cascade-deleted any
+    attached cheque copies. After Phase 38 diff-merge, attachments
+    must survive untouched."""
+    from app.models.case import Cheque, ChequeAttachment
+
+    c, SessionLocal = client
+    h = _h(c)
+    case = _make_case_with_blank_cheque(c, h, code="P38-0005").json()
+    case_id = case["id"]
+    cheque_id = case["cheques"][0]["id"]
+
+    # Attach a fake cheque copy to the row.
+    up = c.post(
+        f"/api/v1/cases/{case_id}/cheques/{cheque_id}/attachments",
+        headers=h,
+        files={"file": ("scan.pdf", b"%PDF-SCAN", "application/pdf")},
+    )
+    assert up.status_code == 201, up.text
+    att_id = up.json()["attachment"]["id"]
+
+    # PATCH the case - send the same cheque row back with its id
+    # set, plus a brand-new second row (no id).
+    patch = c.patch(
+        f"/api/v1/cases/{case_id}",
+        headers=h,
+        json={
+            "commands": "After-save smoke test",
+            "cheques": [
+                {
+                    "id": cheque_id,
+                    "cheque_number": "FILLED-AFTER-PATCH",
+                    "bank_id": None,
+                    "amount": "1.00",
+                    "cheque_date": "2026-05-15",
+                    "cheque_type": "Normal",
+                    "bounce_reason": "Insufficient Funds",
+                },
+                {
+                    # No id => brand new row
+                    "cheque_number": "NEW-2",
+                    "bank_id": None,
+                    "amount": "2.00",
+                    "cheque_date": "2026-05-16",
+                    "cheque_type": "Normal",
+                    "bounce_reason": "",
+                },
+            ],
+        },
+    )
+    assert patch.status_code == 200, patch.text
+
+    # The original cheque row keeps its id AND its attachment.
+    db = SessionLocal()
+    try:
+        same_cheque = db.get(Cheque, cheque_id)
+        assert same_cheque is not None, "diff-merge should have kept the row"
+        assert same_cheque.cheque_number == "FILLED-AFTER-PATCH"
+
+        same_att = db.get(ChequeAttachment, att_id)
+        assert same_att is not None, (
+            "ChequeAttachment was cascade-deleted - PATCH still rebuilds the rows"
+        )
+        assert same_att.cheque_id == cheque_id
+
+        # And the brand-new row was added.
+        all_cheques = list(same_cheque.case.cheques)
+        assert len(all_cheques) == 2
+        assert any(ch.cheque_number == "NEW-2" for ch in all_cheques)
+    finally:
+        db.close()
+
+
+def test_patch_with_missing_cheque_id_deletes_the_row(client) -> None:
+    """Diff-merge also has to handle removal: a cheque whose id is
+    not in the payload should be deleted along with its files."""
+    from app.models.case import Cheque, ChequeAttachment
+
+    c, SessionLocal = client
+    h = _h(c)
+    case = _make_case_with_blank_cheque(c, h, code="P38-0006").json()
+    case_id = case["id"]
+    cheque_id = case["cheques"][0]["id"]
+
+    up = c.post(
+        f"/api/v1/cases/{case_id}/cheques/{cheque_id}/attachments",
+        headers=h,
+        files={"file": ("scan.pdf", b"%PDF", "application/pdf")},
+    )
+    att_id = up.json()["attachment"]["id"]
+
+    # PATCH with an EMPTY cheques list - the existing row should go.
+    patch = c.patch(
+        f"/api/v1/cases/{case_id}",
+        headers=h,
+        json={"cheques": []},
+    )
+    assert patch.status_code == 200, patch.text
+
+    db = SessionLocal()
+    try:
+        assert db.get(Cheque, cheque_id) is None
+        # Attachment cascades away with the cheque - that's the
+        # expected behaviour when the user actually removes the row.
+        assert db.get(ChequeAttachment, att_id) is None
+    finally:
+        db.close()
+
+
 def test_bank_return_letter_is_a_valid_case_category(client) -> None:
     """Phase 38: Bank Return Letter joins the fixed category list
     so it shows up as its own tile on the case Attachments grid."""

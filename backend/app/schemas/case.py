@@ -25,6 +25,24 @@ class ChequeCreate(ChequeBase):
     pass
 
 
+class ChequeUpdate(ChequeBase):
+    """Phase 38: payload row inside a PATCH /cases/{id} body.
+
+    Carries an optional ``id`` so the backend can match an
+    incoming row against an existing ``Cheque`` and update it in
+    place instead of clear-and-rebuilding the whole list - which
+    used to cascade-delete the linked ChequeAttachment rows on
+    every save.
+
+    A row with no ``id`` is treated as a brand-new cheque; an
+    existing cheque whose id is missing from the payload is
+    deleted (and its attachments cascade away, which is the
+    expected behaviour when the user removes a row).
+    """
+
+    id: int | None = None
+
+
 class ChequeRead(ChequeBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
@@ -125,7 +143,7 @@ class CaseUpdate(BaseModel):
     ed_id: int | None = None
     chairman_id: int | None = None
     lawyer_id: int | None = None
-    cheques: list[ChequeCreate] | None = None
+    cheques: list[ChequeUpdate] | None = None
 
 
 class CaseListItem(BaseModel):
