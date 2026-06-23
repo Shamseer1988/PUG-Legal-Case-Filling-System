@@ -47,6 +47,14 @@ reports = [
     "reportlab>=4.2.5",
     "pillow>=11.0.0",
 ]
+# Phase 38: Tesseract bindings for the cheque-OCR pipeline. The
+# system ``tesseract-ocr`` binary + (for PDF cheques) ``poppler``
+# must be installed separately - the setup scripts do that.
+ocr = [
+    "pytesseract>=0.3.13",
+    "pdf2image>=1.17.0",
+    "pillow>=11.0.0",
+]
 
 # Tell setuptools which top-level packages belong in the wheel.
 # Without this, the `alembic/` folder at the backend root confuses
