@@ -18,6 +18,11 @@ CATEGORY_COMPT_CARD = "Computer Card"
 CATEGORY_PARTNERS_ID = "Partners ID"
 CATEGORY_SHOP_ADDRESS = "Shop Address"
 CATEGORY_INVOICES = "Invoices"
+# Phase 38: bank return letters live at the case level now (they
+# may reference multiple cheques, and OCR on a varied-layout
+# letter is unreliable - the cheque image itself is the OCR
+# source of truth, not the letter).
+CATEGORY_BANK_RETURN_LETTER = "Bank Return Letter"
 CATEGORY_OTHER = "Other Docs"
 
 # Legacy default. New uploads must pick one of the constants above,
@@ -32,6 +37,7 @@ ATTACHMENT_CATEGORIES: tuple[str, ...] = (
     CATEGORY_PARTNERS_ID,
     CATEGORY_SHOP_ADDRESS,
     CATEGORY_INVOICES,
+    CATEGORY_BANK_RETURN_LETTER,
     CATEGORY_OTHER,
 )
 

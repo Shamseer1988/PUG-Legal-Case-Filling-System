@@ -587,18 +587,22 @@ def upload_cheque_attachment(
     case_id: int,
     cheque_id: int,
     file: UploadFile = File(...),
-    is_bank_return_letter: bool = Form(True),
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(CASES_CREATE)),
 ) -> ChequeAttachmentUploadResult:
-    """Upload a file linked to a single cheque row. When
-    ``is_bank_return_letter=True`` (the default) the file is also
-    fed to the OCR pipeline; any extracted fields come back in the
-    ``ocr`` part of the response and the form auto-fills the row.
+    """Phase 38: upload a CHEQUE COPY (printed cheque image) linked
+    to a single cheque row.
 
-    Reading the file into memory is fine for the bank-letter size
-    range (<10MB is typical); for larger uploads a future revision
-    can switch to a streaming tee.
+    The file is always fed to the OCR pipeline - cheque images have
+    a standardised layout, so OCR is far more reliable than on the
+    bank return letter (which now lives in the case-level Attachments
+    grid). Extracted #/Bank/Amount/Date come back in the ``ocr``
+    part of the response and the form auto-fills the row. Bounce
+    reason is never returned here - it's not on the cheque.
+
+    Reading the file into memory is fine for typical cheque-copy
+    sizes (<10MB); for larger uploads a future revision can switch
+    to a streaming tee.
     """
     case = _get_case_or_404(db, user, case_id)
     cheque = _cheque_or_404(db, case, cheque_id)
@@ -621,28 +625,30 @@ def upload_cheque_attachment(
         case, cheque.id, _BlobUpload(blob, file.filename or "letter", mime)
     )
 
-    ocr_payload: dict | None = None
-    if is_bank_return_letter:
-        result = cheque_ocr.extract_fields(db, blob=blob, mime=mime)
-        ocr_payload = result.to_payload()
-        # Attaching a bank return letter is an explicit "extract
-        # these values" signal from the user, so we OVERWRITE any
-        # placeholder data they typed before the upload. The UI
-        # still echoes the new values so the user can manually
-        # tweak anything OCR got wrong.
-        if result.cheque_number:
-            cheque.cheque_number = result.cheque_number
-        if result.bank_id:
-            cheque.bank_id = result.bank_id
-        if result.amount is not None:
-            cheque.amount = result.amount
-        if result.cheque_date:
-            cheque.cheque_date = result.cheque_date
-        if result.bounce_reason:
-            cheque.bounce_reason = result.bounce_reason
+    result = cheque_ocr.extract_fields(db, blob=blob, mime=mime)
+    ocr_payload = result.to_payload()
+    # Attaching a cheque copy is an explicit "extract these
+    # values" signal, so OCR overwrites any placeholder text the
+    # user typed before the upload. They can still tweak anything
+    # OCR got wrong - the form re-renders with the new values.
+    if result.cheque_number:
+        cheque.cheque_number = result.cheque_number
+    if result.bank_id:
+        cheque.bank_id = result.bank_id
+    if result.amount is not None:
+        cheque.amount = result.amount
+    if result.cheque_date:
+        cheque.cheque_date = result.cheque_date
+    # bounce_reason is never auto-filled from a cheque image - it
+    # lives on the bank return letter (case-level attachment).
 
     import json as _json
 
+    # Phase 38: cheque-row uploads are now CHEQUE COPIES. The
+    # legacy ``is_bank_return_letter`` column stays on the row for
+    # rows already persisted under the Phase 36 design - new
+    # uploads always set it False since the bank letter now lives
+    # in the case-level Attachments grid.
     att = ChequeAttachment(
         cheque_id=cheque.id,
         case_id=case.id,
@@ -650,7 +656,7 @@ def upload_cheque_attachment(
         stored_filename=stored,
         mime_type=mime,
         size_bytes=size,
-        is_bank_return_letter=is_bank_return_letter,
+        is_bank_return_letter=False,
         ocr_extracted_json=_json.dumps(ocr_payload) if ocr_payload else "",
         uploaded_by_id=user.id,
     )

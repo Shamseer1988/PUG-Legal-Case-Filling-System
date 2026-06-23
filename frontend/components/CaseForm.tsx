@@ -213,13 +213,15 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       actual_due_amount: draft.actual_due_amount || '0',
       legal_filing_amount: draft.legal_filing_amount || '0',
       deposit_date: draft.deposit_date || null,
-      cheques: draft.cheques
-        .filter((c) => c.cheque_number.trim())
-        .map(({ id: _id, ...c }) => ({
-          ...c,
-          amount: c.amount || '0',
-          cheque_date: c.cheque_date || null,
-        })),
+      // Phase 38: persist every cheque row, even those without a
+      // number, so each row gets a server-side id and the cheque-
+      // copy paperclip becomes attachable right after Save. Submit
+      // (not save) enforces non-empty numbers.
+      cheques: draft.cheques.map(({ id: _id, ...c }) => ({
+        ...c,
+        amount: c.amount || '0',
+        cheque_date: c.cheque_date || null,
+      })),
     };
   }
 
@@ -508,6 +510,10 @@ export function CaseForm({ caseId }: { caseId?: number }) {
                   disabled={locked}
                   onAutoFill={(ocr) => {
                     if (!ocr.success) return;
+                    // Phase 38: cheque-copy OCR auto-fills #/Bank/
+                    // Amount/Date only. Bounce reason isn't on the
+                    // cheque image - it's read from the case-level
+                    // Bank Return Letter attachment.
                     upCheque(i, {
                       ...(ocr.cheque_number
                         ? { cheque_number: ocr.cheque_number }
@@ -515,9 +521,6 @@ export function CaseForm({ caseId }: { caseId?: number }) {
                       ...(ocr.bank_id ? { bank_id: ocr.bank_id } : {}),
                       ...(ocr.amount ? { amount: ocr.amount } : {}),
                       ...(ocr.cheque_date ? { cheque_date: ocr.cheque_date } : {}),
-                      ...(ocr.bounce_reason
-                        ? { bounce_reason: ocr.bounce_reason }
-                        : {}),
                       ...(ocr.cheque_type ? { cheque_type: ocr.cheque_type } : {}),
                     });
                   }}
@@ -574,11 +577,10 @@ export function CaseForm({ caseId }: { caseId?: number }) {
               </Field>
               <Field label="Bounce Reason" small>
                 <div className="flex gap-1">
-                  <input
+                  <BounceReasonPicker
                     value={c.bounce_reason}
-                    onChange={(e) => upCheque(i, { bounce_reason: e.target.value })}
                     disabled={locked}
-                    className={inputCls}
+                    onChange={(v) => upCheque(i, { bounce_reason: v })}
                   />
                   {!locked && (
                     <button
@@ -900,6 +902,73 @@ function Select({
         </option>
       ))}
     </select>
+  );
+}
+
+// Phase 38: bounce-reason picker with the common bank-return
+// reasons as a dropdown plus a "Custom..." fallback for edge
+// cases the list doesn't cover.
+const BOUNCE_REASONS = [
+  'Insufficient Funds',
+  'Account Closed',
+  'Stop Payment',
+  'Signature Mismatch',
+  'Refer to Drawer',
+  'Post-Dated',
+  'Stale Cheque',
+  'Amount in Words / Figures Mismatch',
+] as const;
+
+function BounceReasonPicker({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: string;
+  disabled?: boolean;
+  onChange: (v: string) => void;
+}) {
+  const presetMatch = (BOUNCE_REASONS as readonly string[]).includes(value);
+  const [custom, setCustom] = useState(!!value && !presetMatch);
+  // Track the dropdown selection separately so the user can pick
+  // "Custom..." then type something - without it, the select
+  // would immediately snap back to "--".
+  const selectValue = custom ? '__custom__' : presetMatch ? value : '';
+  return (
+    <div className="flex flex-1 flex-col gap-1">
+      <select
+        value={selectValue}
+        disabled={disabled}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (v === '__custom__') {
+            setCustom(true);
+            onChange('');
+          } else {
+            setCustom(false);
+            onChange(v);
+          }
+        }}
+        className={inputCls}
+      >
+        <option value="">--</option>
+        {BOUNCE_REASONS.map((r) => (
+          <option key={r} value={r}>
+            {r}
+          </option>
+        ))}
+        <option value="__custom__">Custom…</option>
+      </select>
+      {custom && (
+        <input
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={disabled}
+          placeholder="Type the reason"
+          className={inputCls}
+        />
+      )}
+    </div>
   );
 }
 

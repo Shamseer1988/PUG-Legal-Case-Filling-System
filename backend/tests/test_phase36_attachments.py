@@ -242,13 +242,14 @@ def test_upload_cheque_attachment_without_ocr_engine(client) -> None:
     r = c.post(
         f"/api/v1/cases/{case['id']}/cheques/{cheque_id}/attachments",
         headers=h,
-        files={"file": ("letter.png", b"PNGDATA", "image/png")},
-        data={"is_bank_return_letter": "true"},
+        files={"file": ("cheque.png", b"PNGDATA", "image/png")},
     )
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["attachment"]["cheque_id"] == cheque_id
-    assert body["attachment"]["is_bank_return_letter"] is True
+    # Phase 38: cheque-row uploads are always cheque copies (not
+    # bank letters) - the legacy column stays False.
+    assert body["attachment"]["is_bank_return_letter"] is False
     # OCR couldn't extract anything in this minimal env - that's
     # the documented graceful-fallback path.
     assert body["ocr"]["success"] is False
@@ -268,6 +269,8 @@ def test_upload_cheque_attachment_applies_ocr_fields(client, monkeypatch) -> Non
     from decimal import Decimal
 
     def fake_extract(db, *, blob, mime):
+        # Phase 38: OCR no longer surfaces bounce_reason from a
+        # cheque image - the reason lives on the bank letter.
         return cheque_ocr.ChequeOcrResult(
             success=True,
             engine="fake",
@@ -277,7 +280,6 @@ def test_upload_cheque_attachment_applies_ocr_fields(client, monkeypatch) -> Non
             amount=Decimal("12345.67"),
             cheque_date=date(2026, 7, 1),
             cheque_type="Normal",
-            bounce_reason="INSUFFICIENT BALANCE",
         )
 
     monkeypatch.setattr(cheque_ocr, "extract_fields", fake_extract)
@@ -285,14 +287,15 @@ def test_upload_cheque_attachment_applies_ocr_fields(client, monkeypatch) -> Non
     r = c.post(
         f"/api/v1/cases/{case['id']}/cheques/{cheque_id}/attachments",
         headers=h,
-        files={"file": ("letter.pdf", b"%PDF-LET", "application/pdf")},
-        data={"is_bank_return_letter": "true"},
+        files={"file": ("cheque.pdf", b"%PDF-LET", "application/pdf")},
     )
     assert r.status_code == 201, r.text
     body = r.json()
     assert body["ocr"]["cheque_number"] == "AUTO-9001"
     assert body["ocr"]["amount"] == "12345.67"
     assert body["ocr"]["cheque_date"] == "2026-07-01"
+    # Bounce reason is never surfaced on a cheque-copy upload.
+    assert body["ocr"]["bounce_reason"] is None
 
     # Cheque row was updated in place (it started empty).
     fresh = c.get(f"/api/v1/cases/{case['id']}", headers=h).json()
@@ -300,13 +303,17 @@ def test_upload_cheque_attachment_applies_ocr_fields(client, monkeypatch) -> Non
     assert target["cheque_number"] == "AUTO-9001"
     assert target["amount"] == "12345.67"
     assert target["cheque_date"] == "2026-07-01"
-    assert "INSUFFICIENT" in target["bounce_reason"]
+    # The placeholder row (index 1) started with an empty bounce
+    # reason; cheque-copy OCR doesn't touch that field.
+    assert target["bounce_reason"] == ""
 
 
-def test_upload_with_is_bank_return_false_skips_ocr(client, monkeypatch) -> None:
-    """If the operator unticks "this is a bank return letter" the
-    OCR pipeline is skipped entirely - the file lands but the
-    cheque row is untouched even if OCR would have found values."""
+def test_upload_cheque_copy_does_not_touch_bounce_reason(
+    client, monkeypatch
+) -> None:
+    """Phase 38: bounce_reason is never overwritten by a cheque-
+    copy upload - it lives on the bank letter, not on the cheque
+    image."""
     c, SessionLocal, _ = client
     h = _admin_h(c)
     case = _make_case(c, h)
@@ -317,17 +324,15 @@ def test_upload_with_is_bank_return_false_skips_ocr(client, monkeypatch) -> None
     from datetime import date
     from decimal import Decimal
 
-    called = {"n": 0}
-
     def fake_extract(db, *, blob, mime):
-        called["n"] += 1
         return cheque_ocr.ChequeOcrResult(
             success=True,
             engine="fake",
-            cheque_number="OCR-WOULD-OVERWRITE",
+            cheque_number="OCR-OVERWRITES",
             amount=Decimal("99999.99"),
             cheque_date=date(2099, 1, 1),
-            bounce_reason="OCR_REASON",
+            # bounce_reason is intentionally None to mirror what
+            # cheque-image OCR actually returns post Phase 38.
         )
 
     monkeypatch.setattr(cheque_ocr, "extract_fields", fake_extract)
@@ -335,17 +340,16 @@ def test_upload_with_is_bank_return_false_skips_ocr(client, monkeypatch) -> None
     c.post(
         f"/api/v1/cases/{case['id']}/cheques/{cheque_id}/attachments",
         headers=h,
-        files={"file": ("misc.pdf", b"%PDF-LET", "application/pdf")},
-        data={"is_bank_return_letter": "false"},
+        files={"file": ("cheque.pdf", b"%PDF-LET", "application/pdf")},
     )
 
-    assert called["n"] == 0, "OCR was called even though flag was off"
     fresh = c.get(f"/api/v1/cases/{case['id']}", headers=h).json()
     target = [ch for ch in fresh["cheques"] if ch["id"] == cheque_id][0]
-    # Original values from _make_case survive.
-    assert target["cheque_number"] == "CHQ-100"
-    assert target["amount"] == "500.00"
-    assert target["cheque_date"] == "2026-05-15"
+    # #, amount, date all overwritten by OCR
+    assert target["cheque_number"] == "OCR-OVERWRITES"
+    assert target["amount"] == "99999.99"
+    assert target["cheque_date"] == "2099-01-01"
+    # But the existing bounce reason is preserved.
     assert "Insufficient" in target["bounce_reason"]
 
 
@@ -360,7 +364,6 @@ def test_list_and_view_and_delete_cheque_attachment(client) -> None:
         f"/api/v1/cases/{case['id']}/cheques/{cheque_id}/attachments",
         headers=h,
         files={"file": ("scan.pdf", b"%PDF-S", "application/pdf")},
-        data={"is_bank_return_letter": "false"},
     )
     assert up.status_code == 201, up.text
     aid = up.json()["attachment"]["id"]
@@ -411,7 +414,6 @@ def test_cheque_attachment_404_when_cheque_belongs_to_other_case(client) -> None
         f"/api/v1/cases/{case_a['id']}/cheques/{cheque_in_b}/attachments",
         headers=h,
         files={"file": ("x.pdf", b"%PDF-X", "application/pdf")},
-        data={"is_bank_return_letter": "false"},
     )
     assert r.status_code == 404
 
@@ -435,7 +437,6 @@ def test_zip_includes_case_and_cheque_attachments(client) -> None:
         f"/api/v1/cases/{case['id']}/cheques/{cheque_id}/attachments",
         headers=h,
         files={"file": ("bank-letter.pdf", b"%PDF-BANK", "application/pdf")},
-        data={"is_bank_return_letter": "false"},
     )
 
     zr = c.get(f"/api/v1/cases/{case['id']}/attachments.zip", headers=h)
@@ -470,20 +471,22 @@ def test_ocr_text_extraction_pulls_fields_via_regex(client) -> None:
     c, SessionLocal, _ = client
     db = SessionLocal()
     try:
+        # Phase 38: regex extractor is fed text that resembles what
+        # OCR pulls off a printed cheque - cheque number, drawer
+        # bank, amount and date. Bounce reason is intentionally
+        # absent (it's never on a cheque image).
         text = (
-            "BANK RETURN ADVICE\n"
-            "Bank: Emirates NBD\n"
+            "Emirates NBD\n"
             "Cheque No.: CH-AB-1234\n"
             "Amount: AED 1,250.75\n"
             "Date: 2026-05-15\n"
-            "Reason for return: Insufficient Balance\n"
         )
         res = cheque_ocr._extract_from_text(db, text, engine="test")
         assert res.success is True
         assert res.cheque_number == "CH-AB-1234"
         assert str(res.amount) == "1250.75"
         assert res.cheque_date.isoformat() == "2026-05-15"
-        assert "Insufficient" in res.bounce_reason
+        assert res.bounce_reason is None
         assert res.bank_name == "Emirates NBD"
         assert res.bank_id is not None
     finally:

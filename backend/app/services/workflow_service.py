@@ -115,6 +115,15 @@ def submit(db: Session, case: Case, user: User) -> Case:
         raise WorkflowError("Only Draft cases can be submitted")
     if not case.cheques:
         raise WorkflowError("At least one cheque is required before submitting")
+    # Phase 38: ChequeBase allows empty cheque_number during Draft
+    # (so the cheque-copy upload can attach before the number is
+    # known). Enforce the field is filled before the case actually
+    # leaves the Accountant's hands.
+    missing = [ch for ch in case.cheques if not (ch.cheque_number or "").strip()]
+    if missing:
+        raise WorkflowError(
+            f"{len(missing)} cheque row(s) are missing a cheque number"
+        )
 
     from_status, from_stage = case.status, case.current_stage
     first = WORKFLOW_STAGES[0]

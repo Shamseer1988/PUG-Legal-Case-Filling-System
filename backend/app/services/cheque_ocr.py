@@ -123,10 +123,10 @@ def _vision_llm_extract(blob: bytes, mime: str) -> dict[str, Any] | None:
         return None
 
     prompt = (
-        "You are reading a bank cheque return acknowledgement letter. "
+        "You are reading a printed bank cheque. "
         "Return ONLY a JSON object with these fields (use null if unknown): "
         '{"cheque_number": str, "bank_name": str, "amount": str (decimal), '
-        '"cheque_date": "YYYY-MM-DD", "bounce_reason": str}. '
+        '"cheque_date": "YYYY-MM-DD"}. '
         "No prose, no markdown fences."
     )
 
@@ -301,9 +301,11 @@ def _extract_from_text(
         if d is not None:
             res.cheque_date = d
 
-    m = _RX_REASON.search(text)
-    if m:
-        res.bounce_reason = m.group(1).strip().rstrip(".")
+    # Phase 38: bounce_reason is intentionally NOT pulled from cheque
+    # OCR - the reason lives on the bank return letter (now stored
+    # under the case-level Attachments grid), never on the cheque
+    # itself. Leaving the field None keeps any user-entered value
+    # untouched after auto-fill.
 
     m = _RX_BANK_HINT.search(text)
     bank_hint = m.group(0) if m else None
@@ -322,7 +324,6 @@ def _extract_from_text(
             res.cheque_number,
             res.amount,
             res.cheque_date,
-            res.bounce_reason,
             res.bank_id,
         )
     )
@@ -346,9 +347,6 @@ def _from_llm_json(
     d = data.get("cheque_date")
     if isinstance(d, str):
         res.cheque_date = _parse_date(d)
-    rsn = data.get("bounce_reason")
-    if isinstance(rsn, str) and rsn.strip():
-        res.bounce_reason = rsn.strip()
     bn = data.get("bank_name")
     bid, bname = _match_bank(db, bn if isinstance(bn, str) else None)
     res.bank_id = bid
@@ -360,7 +358,6 @@ def _from_llm_json(
             res.cheque_number,
             res.amount,
             res.cheque_date,
-            res.bounce_reason,
             res.bank_id,
         )
     )

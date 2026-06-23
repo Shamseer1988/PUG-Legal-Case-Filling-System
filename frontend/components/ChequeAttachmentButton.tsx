@@ -14,13 +14,15 @@ import { useAuthStore } from '@/lib/auth';
 import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 
 /**
- * Phase 36: paperclip icon shown on each cheque row.
+ * Phase 36 / 38: paperclip icon shown on each cheque row.
  *
  * Clicking it opens a hidden file picker. The selected file is
- * uploaded as a "bank return acknowledgement letter" - the backend
- * OCRs it (Tesseract by default, Vision LLM if configured) and
- * the resulting fields are handed back via ``onAutoFill`` so the
- * parent form can populate the row inline.
+ * uploaded as a **cheque copy** (image of the physical cheque) -
+ * the backend OCRs it (Tesseract by default, Vision LLM if
+ * configured) and the resulting #/Bank/Amount/Date fields are
+ * handed back via ``onAutoFill`` so the parent form populates the
+ * row inline. Bounce reason is NOT auto-filled here - it lives on
+ * the bank return letter (case-level Attachments grid).
  *
  * Until the case has been saved at least once (so it has an id
  * and the cheque rows have ids in the DB), the button is disabled
@@ -113,7 +115,6 @@ export function ChequeAttachmentButton({
     try {
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('is_bank_return_letter', 'true');
       const token = useAuthStore.getState().accessToken;
       const r = await fetch(
         `${API_BASE}/api/v1/cases/${caseId}/cheques/${chequeId}/attachments`,
@@ -139,13 +140,12 @@ export function ChequeAttachmentButton({
           ocr.bank_id && 'Bank',
           ocr.amount && 'Amount',
           ocr.cheque_date && 'Date',
-          ocr.bounce_reason && 'Reason',
         ]
           .filter(Boolean)
           .join(', ');
-        setInfo(`Auto-filled from bank letter: ${filled || '(no fields matched)'}`);
+        setInfo(`Auto-filled from cheque image: ${filled || '(no fields matched)'}`);
       } else {
-        setInfo('Attached. OCR could not read the file - fill the row manually.');
+        setInfo('Attached. OCR could not read the cheque - fill the row manually.');
       }
     } catch (e) {
       setErr((e as Error).message);
@@ -173,8 +173,8 @@ export function ChequeAttachmentButton({
         disabled={isDisabled}
         title={
           notReady
-            ? 'Save the case first to attach a bank letter'
-            : 'Attach a bank return acknowledgement letter (OCR auto-fills the row)'
+            ? 'Save the case first to attach a cheque copy'
+            : 'Attach a cheque copy (OCR auto-fills #/Bank/Amount/Date)'
         }
         className="inline-flex items-center justify-center rounded-md border border-[rgb(var(--color-border))] p-1.5 text-[rgb(var(--color-muted))] hover:bg-pug-gold-500/10 hover:text-pug-gold-700 disabled:cursor-not-allowed disabled:opacity-40"
       >

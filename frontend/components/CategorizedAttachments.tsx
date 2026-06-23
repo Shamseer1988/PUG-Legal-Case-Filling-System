@@ -28,6 +28,9 @@ export const CASE_ATTACHMENT_CATEGORIES = [
   'Partners ID',
   'Shop Address',
   'Invoices',
+  // Phase 38: bank return letters are now a case-level
+  // attachment (no OCR; the cheque image is the OCR source).
+  'Bank Return Letter',
   'Other Docs',
 ] as const;
 
@@ -64,6 +67,7 @@ export function CategorizedAttachments({
       'Partners ID': [],
       'Shop Address': [],
       'Invoices': [],
+      'Bank Return Letter': [],
       'Other Docs': [],
     };
     for (const a of attachments) {

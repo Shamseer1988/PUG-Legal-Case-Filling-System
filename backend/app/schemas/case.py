@@ -8,7 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # ---------- Cheque ----------
 class ChequeBase(BaseModel):
-    cheque_number: str = Field(min_length=1, max_length=50)
+    # Phase 38: allow blank cheque_number while the case is in
+    # Draft so the user can click "Add Cheque" and immediately
+    # attach a cheque-copy before they've typed the number. The
+    # submit transition rejects empty numbers.
+    cheque_number: str = Field(default="", max_length=50)
     bank_id: int | None = None
     bank_name_text: str = ""
     amount: Decimal = Decimal("0")
