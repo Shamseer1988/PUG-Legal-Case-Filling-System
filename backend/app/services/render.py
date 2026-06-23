@@ -360,19 +360,18 @@ def render_case_pdf(db: Session, case: Case) -> bytes:
         f'{_flag("Civil", case.is_civil)}  &nbsp; '
         f'{_flag("Both", case.is_criminal and case.is_civil)}'
     )
-    case_type_text = case_type.name if case_type else "-"
+    # Phase 38: Case Type column dropped on both the form and the
+    # print view (the Criminal/Civil/Both flags already capture it).
+    # ``case_type`` is still resolved above for backwards-compat
+    # with cases created before that change, but no longer rendered.
     flag_row = Table(
-        [[
-            Paragraph(flag_text, st["body"]),
-            Paragraph(f'<b>Case Type:</b> {case_type_text}', st["value"]),
-        ]],
-        colWidths=[doc.width * 0.55, doc.width * 0.45],
+        [[Paragraph(flag_text, st["body"])]],
+        colWidths=[doc.width],
     )
     flag_row.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
         ("TOPPADDING", (0, 0), (-1, -1), 4),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
-        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
     ]))
     elements.append(flag_row)
 
@@ -503,15 +502,29 @@ def render_case_pdf(db: Session, case: Case) -> bytes:
     elements.extend(_section_heading("ATTACHMENTS", st))
 
     if case.attachments:
-        for att in case.attachments:
-            sz = f"{att.size_bytes / 1024:.1f} KB"
-            elements.append(
-                Paragraph(
-                    f'• {att.original_filename} '
-                    f'<font color="#8a91a3">({att.category}, {sz})</font>',
-                    st["body"],
-                )
-            )
+        # Phase 38: print only the document TYPE (category), in a
+        # 2-column grid. Filename + size aren't useful on the
+        # printed form - the operator only cares which kinds of
+        # supporting documents are on file. One bullet per file so
+        # multiples in the same category are still visible.
+        bullets = [
+            Paragraph(f"• {att.category or '-'}", st["body"])
+            for att in case.attachments
+        ]
+        # Pad to an even count so the two-column table is well-formed.
+        if len(bullets) % 2:
+            bullets.append(Paragraph("", st["body"]))
+        rows = [bullets[i : i + 2] for i in range(0, len(bullets), 2)]
+        col_w = doc.width / 2
+        attach_tbl = Table(rows, colWidths=[col_w, col_w])
+        attach_tbl.setStyle(TableStyle([
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 0),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]))
+        elements.append(attach_tbl)
     else:
         elements.append(
             Paragraph("<i>No attachments uploaded.</i>", st["small_muted"])

@@ -193,9 +193,9 @@
 
 <h2>Attachments</h2>
 {% if case.attachments %}
-<ul>
+<ul style="display:grid; grid-template-columns:1fr 1fr; column-gap:24px; row-gap:2px; list-style:none; padding-left:0; margin:0;">
   {% for a in case.attachments %}
-  <li>{{ a.original_filename }} <span style="color:#8a91a3">({{ a.category }}, {{ (a.size_bytes/1024)|round(1) }} KB)</span></li>
+  <li style="padding:2px 0;">&bull; {{ a.category or "-" }}</li>
   {% endfor %}
 </ul>
 {% else %}
