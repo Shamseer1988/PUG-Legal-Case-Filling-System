@@ -37,8 +37,18 @@ function Install-OcrSystemPackages {
 
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         Write-Host "    Installing Tesseract via winget (UB-Mannheim build)..."
-        winget install --silent --accept-source-agreements --accept-package-agreements `
-            -e --id UB-Mannheim.TesseractOCR
+        # The UB-Mannheim installer ships as an InnoSetup wrapper.
+        # In ``--silent`` mode its "Add to PATH" checkbox is OFF
+        # by default, which is why a fresh install leaves
+        # tesseract.exe in C:\Program Files\Tesseract-OCR\ without
+        # PATH ever being touched. Override the install args to
+        # enable the ``add_to_path`` task as well as include the
+        # Arabic language pack while we're at it. ``--override``
+        # bypasses winget's silent flag, so we re-pass /VERYSILENT.
+        winget install --accept-source-agreements --accept-package-agreements `
+            -e --id UB-Mannheim.TesseractOCR `
+            --override "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /MERGETASKS=`"add_to_path,!add_to_path_all,scriptlanguages\arabic,bestlanguages\arabic`""
+
         Write-Host "    Installing Poppler via winget..."
         winget install --silent --accept-source-agreements --accept-package-agreements `
             -e --id oschwartz10612.Poppler 2>$null
@@ -53,12 +63,40 @@ function Install-OcrSystemPackages {
         return
     }
 
-    # winget / choco usually add Tesseract to PATH automatically, but
-    # the running shell may not have refreshed - pull the new PATH so
-    # the rest of this script (and the pip install below) can see it.
+    # Pull the freshest Machine + User PATH so the rest of the
+    # script sees the new entries the installer wrote.
     $machinePath = [System.Environment]::GetEnvironmentVariable("Path","Machine")
     $userPath    = [System.Environment]::GetEnvironmentVariable("Path","User")
     $env:Path = "$machinePath;$userPath"
+
+    if (-not (Get-Command tesseract -ErrorAction SilentlyContinue)) {
+        # The installer didn't flip "Add to PATH" - happens when
+        # an older /MERGETASKS flag silently no-op'd or the user
+        # ran the script under a restricted shell. Try a manual
+        # PATH-write fallback against the canonical install dirs.
+        $candidates = @(
+            (Join-Path $env:ProgramFiles "Tesseract-OCR"),
+            (Join-Path ${env:ProgramFiles(x86)} "Tesseract-OCR")
+        )
+        $tessDir = $candidates | Where-Object { Test-Path (Join-Path $_ "tesseract.exe") } | Select-Object -First 1
+
+        if (-not $tessDir) {
+            Write-Host "    !! Tesseract install ran but tesseract.exe was not found in" -ForegroundColor Yellow
+            Write-Host "       Program Files. Open a new shell and re-run this script, or" -ForegroundColor Yellow
+            Write-Host "       set OCR_VISION_API_KEY in backend\.env instead." -ForegroundColor Yellow
+            return
+        }
+
+        Write-Host "    Adding $tessDir to the User PATH..."
+        $existing = [System.Environment]::GetEnvironmentVariable("Path","User")
+        $entries  = if ($existing) { $existing -split ';' } else { @() }
+        if ($entries -notcontains $tessDir) {
+            $newUserPath = if ([string]::IsNullOrEmpty($existing)) { $tessDir } else { "$existing;$tessDir" }
+            [System.Environment]::SetEnvironmentVariable("Path", $newUserPath, "User")
+        }
+        # Make the running shell see it too.
+        $env:Path = "$env:Path;$tessDir"
+    }
 
     if (-not (Get-Command tesseract -ErrorAction SilentlyContinue)) {
         Write-Host "    !! Tesseract install ran but the binary still isn't on PATH." -ForegroundColor Yellow
