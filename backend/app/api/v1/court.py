@@ -62,11 +62,13 @@ def _name(db: Session, uid: int | None) -> str:
 def _filing_to_read(db: Session, f: CourtFiling) -> CourtFilingRead:
     ack_name = ""
     ack_size = 0
+    ack_mime = "application/octet-stream"
     if f.acknowledgment_attachment_id:
         att = db.get(CaseAttachment, f.acknowledgment_attachment_id)
         if att:
             ack_name = att.original_filename
             ack_size = att.size_bytes
+            ack_mime = att.mime_type or ack_mime
     return CourtFilingRead(
         id=f.id,
         case_id=f.case_id,
@@ -77,6 +79,7 @@ def _filing_to_read(db: Session, f: CourtFiling) -> CourtFilingRead:
         acknowledgment_attachment_id=f.acknowledgment_attachment_id,
         acknowledgment_attachment_filename=ack_name,
         acknowledgment_attachment_size=ack_size,
+        acknowledgment_attachment_mime=ack_mime,
         notes=f.notes,
         filed_by_id=f.filed_by_id,
         filed_by_name=_name(db, f.filed_by_id),

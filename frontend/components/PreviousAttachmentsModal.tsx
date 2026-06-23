@@ -1,10 +1,10 @@
 'use client';
 
-import { Download, Paperclip, X } from 'lucide-react';
+import { Eye, Paperclip, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 import {
-  downloadTransitionAttachment,
   formatBytes,
   type TimelineEntry,
 } from '@/lib/transitionAttachments';
@@ -108,23 +108,7 @@ function AttachmentRow({
   caseId: number;
   att: import('@/lib/transitionAttachments').TransitionAttachment;
 }) {
-  const [busy, setBusy] = useState(false);
-  async function download() {
-    setBusy(true);
-    try {
-      const { url } = await downloadTransitionAttachment(caseId, att.id);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = att.original_filename;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const [open, setOpen] = useState(false);
   return (
     <li className="flex items-center justify-between gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm">
       <span className="truncate">
@@ -134,12 +118,19 @@ function AttachmentRow({
         </span>
       </span>
       <button
-        onClick={download}
-        disabled={busy}
-        className="inline-flex items-center gap-1 rounded-md bg-pug-gold-500 px-2 py-1 text-xs font-semibold text-pug-navy-800 hover:bg-pug-gold-400 disabled:opacity-50"
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1 rounded-md bg-pug-gold-500 px-2 py-1 text-xs font-semibold text-pug-navy-800 hover:bg-pug-gold-400"
       >
-        <Download className="h-3.5 w-3.5" /> Download
+        <Eye className="h-3.5 w-3.5" /> View
       </button>
+      <AttachmentViewerModal
+        open={open}
+        onClose={() => setOpen(false)}
+        viewUrl={`/api/v1/cases/${caseId}/transition-attachments/${att.id}/view`}
+        downloadUrl={`/api/v1/cases/${caseId}/transition-attachments/${att.id}/download`}
+        filename={att.original_filename}
+        mimeType={att.mime_type || 'application/octet-stream'}
+      />
     </li>
   );
 }

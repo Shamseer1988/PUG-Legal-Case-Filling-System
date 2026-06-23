@@ -1,11 +1,12 @@
 'use client';
 
-import { Download, Gavel, Paperclip, Save, Trash2, Upload } from 'lucide-react';
+import { Eye, Gavel, Paperclip, Save, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, API_BASE, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 import { formatBytes } from '@/lib/transitionAttachments';
+import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 
 type Filing = {
   id: number;
@@ -20,6 +21,7 @@ type Filing = {
   acknowledgment_attachment_id: number | null;
   acknowledgment_attachment_filename: string;
   acknowledgment_attachment_size: number;
+  acknowledgment_attachment_mime: string;
 };
 
 type Props = {
@@ -37,6 +39,7 @@ export function CourtFilingPanel({ caseId, status, onChange }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ackBusy, setAckBusy] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
   const ackInputRef = useRef<HTMLInputElement | null>(null);
   const [draft, setDraft] = useState({
     police_case_no: '',
@@ -139,27 +142,8 @@ export function CourtFilingPanel({ caseId, status, onChange }: Props) {
     }
   }
 
-  async function downloadAcknowledgement() {
-    if (!filing?.acknowledgment_attachment_id) return;
-    const r = await fetch(
-      `${API_BASE}/api/v1/cases/${caseId}/attachments/${filing.acknowledgment_attachment_id}/download`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-    );
-    if (!r.ok) {
-      setErr(`Download failed (${r.status})`);
-      return;
-    }
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filing.acknowledgment_attachment_filename || 'acknowledgement';
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  }
+  // Acknowledgement preview/download/print are handled by the
+  // AttachmentViewerModal mounted at the end of this component.
 
   return (
     <section className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-5 shadow-soft">
@@ -226,11 +210,12 @@ export function CourtFilingPanel({ caseId, status, onChange }: Props) {
                 <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={downloadAcknowledgement}
+                    onClick={() => setViewOpen(true)}
                     className="inline-flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
+                    title="Preview, download or print"
                   >
-                    <Download className="h-3.5 w-3.5" />
-                    {filing.acknowledgment_attachment_filename || 'Download'}
+                    <Eye className="h-3.5 w-3.5" />
+                    {filing.acknowledgment_attachment_filename || 'Open'}
                     <span className="text-[10px] text-[rgb(var(--color-muted))]">
                       ({formatBytes(filing.acknowledgment_attachment_size)})
                     </span>
@@ -350,6 +335,22 @@ export function CourtFilingPanel({ caseId, status, onChange }: Props) {
           </div>
         </div>
       )}
+      <AttachmentViewerModal
+        open={viewOpen}
+        onClose={() => setViewOpen(false)}
+        viewUrl={
+          filing?.acknowledgment_attachment_id
+            ? `/api/v1/cases/${caseId}/attachments/${filing.acknowledgment_attachment_id}/view`
+            : ''
+        }
+        downloadUrl={
+          filing?.acknowledgment_attachment_id
+            ? `/api/v1/cases/${caseId}/attachments/${filing.acknowledgment_attachment_id}/download`
+            : ''
+        }
+        filename={filing?.acknowledgment_attachment_filename ?? 'acknowledgement'}
+        mimeType={filing?.acknowledgment_attachment_mime ?? 'application/octet-stream'}
+      />
     </section>
   );
 }

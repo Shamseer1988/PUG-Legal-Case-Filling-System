@@ -1,11 +1,12 @@
 'use client';
 
-import { Download, FileSignature, Trash2, Upload } from 'lucide-react';
+import { Eye, FileSignature, Trash2, Upload } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 import { formatBytes } from '@/lib/transitionAttachments';
+import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 
 type SignedFormAttachment = {
   id: number;
@@ -42,6 +43,7 @@ export function SignedFormPanel({ caseId, status, onChange }: Props) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [viewOpen, setViewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   async function load() {
@@ -112,26 +114,8 @@ export function SignedFormPanel({ caseId, status, onChange }: Props) {
     }
   }
 
-  async function download() {
-    if (!attachment) return;
-    const r = await fetch(
-      `${API_BASE}/api/v1/cases/${caseId}/attachments/${attachment.id}/download`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : undefined },
-    );
-    if (!r.ok) {
-      setErr(`Download failed (${r.status})`);
-      return;
-    }
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = attachment.original_filename;
-    a.rel = 'noopener';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  function openViewer() {
+    if (attachment) setViewOpen(true);
   }
 
   return (
@@ -169,10 +153,11 @@ export function SignedFormPanel({ caseId, status, onChange }: Props) {
         {attachment ? (
           <button
             type="button"
-            onClick={download}
+            onClick={openViewer}
             className="inline-flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
+            title="Preview, download or print"
           >
-            <Download className="h-3.5 w-3.5" />
+            <Eye className="h-3.5 w-3.5" />
             {attachment.original_filename}
             <span className="text-[10px] text-[rgb(var(--color-muted))]">
               ({formatBytes(attachment.size_bytes)})
@@ -222,6 +207,22 @@ export function SignedFormPanel({ caseId, status, onChange }: Props) {
           }}
         />
       </div>
+      <AttachmentViewerModal
+        open={viewOpen}
+        onClose={() => setViewOpen(false)}
+        viewUrl={
+          attachment
+            ? `/api/v1/cases/${caseId}/attachments/${attachment.id}/view`
+            : ''
+        }
+        downloadUrl={
+          attachment
+            ? `/api/v1/cases/${caseId}/attachments/${attachment.id}/download`
+            : ''
+        }
+        filename={attachment?.original_filename ?? ''}
+        mimeType={attachment?.mime_type ?? 'application/octet-stream'}
+      />
     </section>
   );
 }

@@ -40,6 +40,9 @@ class CourtFilingRead(CourtFilingBase):
     # the panel can render a download chip without a second request.
     acknowledgment_attachment_filename: str = ""
     acknowledgment_attachment_size: int = 0
+    # Phase 36: surface MIME so the viewer modal can pick the right
+    # preview path (PDF vs image vs unsupported).
+    acknowledgment_attachment_mime: str = "application/octet-stream"
 
 
 # ---------- Hearing ----------

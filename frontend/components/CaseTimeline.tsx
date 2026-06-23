@@ -5,7 +5,7 @@ import {
   ArrowRight,
   Check,
   Circle,
-  Download,
+  Eye,
   Gavel,
   Lock,
   MessageSquare,
@@ -15,8 +15,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 import {
-  downloadTransitionAttachment,
   formatBytes,
   type TimelineEntry,
   type TransitionAttachment,
@@ -199,36 +199,30 @@ function AttachmentChip({
   caseId: number;
   attachment: TransitionAttachment;
 }) {
-  const [busy, setBusy] = useState(false);
-  async function open() {
-    setBusy(true);
-    try {
-      const { url } = await downloadTransitionAttachment(caseId, attachment.id);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = attachment.original_filename;
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-    } finally {
-      setBusy(false);
-    }
-  }
+  const [open, setOpen] = useState(false);
   return (
-    <button
-      onClick={open}
-      disabled={busy}
-      className="inline-flex items-center gap-1.5 rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--color-border))]/40 disabled:opacity-50"
-    >
-      <Paperclip className="h-3 w-3 text-pug-gold-700 dark:text-pug-gold-400" />
-      <span className="font-medium">{attachment.original_filename}</span>
-      <span className="text-[10px] text-[rgb(var(--color-muted))]">
-        ({formatBytes(attachment.size_bytes)})
-      </span>
-      <Download className="h-3 w-3" />
-    </button>
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="inline-flex items-center gap-1.5 rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--color-border))]/40"
+        title="Preview, download or print"
+      >
+        <Paperclip className="h-3 w-3 text-pug-gold-700 dark:text-pug-gold-400" />
+        <span className="font-medium">{attachment.original_filename}</span>
+        <span className="text-[10px] text-[rgb(var(--color-muted))]">
+          ({formatBytes(attachment.size_bytes)})
+        </span>
+        <Eye className="h-3 w-3" />
+      </button>
+      <AttachmentViewerModal
+        open={open}
+        onClose={() => setOpen(false)}
+        viewUrl={`/api/v1/cases/${caseId}/transition-attachments/${attachment.id}/view`}
+        downloadUrl={`/api/v1/cases/${caseId}/transition-attachments/${attachment.id}/download`}
+        filename={attachment.original_filename}
+        mimeType={attachment.mime_type || 'application/octet-stream'}
+      />
+    </>
   );
 }
 
