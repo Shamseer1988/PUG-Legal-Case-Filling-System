@@ -193,11 +193,16 @@
 
 <h2>Attachments</h2>
 {% if case.attachments %}
-<ul style="display:grid; grid-template-columns:1fr 1fr; column-gap:24px; row-gap:2px; list-style:none; padding-left:0; margin:0;">
-  {% for a in case.attachments %}
-  <li style="padding:2px 0;">&bull; {{ a.category or "-" }}</li>
-  {% endfor %}
-</ul>
+{# Phase 39: inline list of unique categories joined by bullets,
+   so the printed form reads as one flowing line:
+   "Credit Application . Computer Card . Shop Address". One entry
+   per category - multiples in the same category collapse. #}
+{% set seen = [] %}
+{% for a in case.attachments %}
+  {% set cat = (a.category or "-")|trim %}
+  {% if cat and cat not in seen %}{% set _ = seen.append(cat) %}{% endif %}
+{% endfor %}
+<div>{{ seen | join(" . ") }}</div>
 {% else %}
 <div style="color:#8a91a3;font-style:italic">No attachments uploaded.</div>
 {% endif %}
