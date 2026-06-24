@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 
 from app.models.case import (
     CASE_STATUS_DRAFT,
+    CASE_STATUS_SUBMITTED,
     STAGE_ACCOUNTANT,
+    STAGE_SALES_MGR,
     Case,
     CaseNoSequence,
     Cheque,
@@ -88,9 +90,40 @@ def create_case(db: Session, payload: CaseCreate, current_user: User) -> Case:
     return case
 
 
-def update_case(db: Session, case: Case, payload: CaseUpdate) -> Case:
-    if case.status != CASE_STATUS_DRAFT:
-        raise ValueError("Only Draft cases can be edited")
+def can_edit_case(case: Case, user: User) -> bool:
+    """Phase 39: an Accountant can keep editing a case until the
+    Sales Manager takes their first action.
+
+    Edit-window rules:
+    - Draft -> the creator can edit (existing behaviour).
+    - Submitted AND still at Sales Manager AND user is the creator
+      -> the Accountant can keep fixing data they typed before SM
+      gets to it. Once SM approves / rejects / requests clarification,
+      the stage or status flips and the window closes.
+    - Anything else -> locked.
+
+    Super users keep their bypass (mostly used for admin fix-ups).
+    """
+    if user.is_super:
+        return True
+    if case.status == CASE_STATUS_DRAFT and case.created_by_id == user.id:
+        return True
+    if (
+        case.status == CASE_STATUS_SUBMITTED
+        and case.current_stage == STAGE_SALES_MGR
+        and case.created_by_id == user.id
+    ):
+        return True
+    return False
+
+
+def update_case(db: Session, case: Case, payload: CaseUpdate, user: User) -> Case:
+    if not can_edit_case(case, user):
+        raise ValueError(
+            "Case is no longer editable: an approver has already acted on it"
+            if case.status != CASE_STATUS_DRAFT
+            else "Only the case owner can edit a draft"
+        )
     data = payload.model_dump(exclude_unset=True)
     cheques = data.pop("cheques", None)
     for k, v in data.items():

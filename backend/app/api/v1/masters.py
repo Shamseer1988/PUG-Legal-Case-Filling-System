@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from app.core.data_scope import allowed_division_ids
 from app.core.deps import require_permission
 from app.core.permissions import MASTERS_READ, MASTERS_WRITE
 from app.db.session import get_db
@@ -54,13 +55,25 @@ def _register(
     update_schema: type[BaseModel],
     order_by: Any,
     unique_field: str | None = None,
+    scope_column: Any | None = None,
 ) -> None:
     @router.get(path, response_model=list[read_schema])
     def list_items(
         db: Session = Depends(get_db),
-        _: User = Depends(require_permission(MASTERS_READ)),
+        user: User = Depends(require_permission(MASTERS_READ)),
     ):
-        return [read_schema.model_validate(x) for x in db.query(model).order_by(order_by).all()]
+        # Phase 39: division-scope the master list when the model
+        # carries a division and the user is not cross-division.
+        # ``allowed_division_ids`` returns None for super/is_all_divisions/
+        # wildcard users so they keep seeing the full master.
+        q = db.query(model)
+        if scope_column is not None:
+            allowed = allowed_division_ids(user)
+            if allowed is not None:
+                if not allowed:
+                    return []
+                q = q.filter(scope_column.in_(allowed))
+        return [read_schema.model_validate(x) for x in q.order_by(order_by).all()]
 
     entity_type = model.__name__
 
@@ -155,6 +168,8 @@ _register(
     update_schema=DivisionUpdate,
     order_by=Division.code,
     unique_field="code",
+    # Phase 39: non-super users only see divisions they're mapped to.
+    scope_column=Division.id,
 )
 _register(
     router,
@@ -175,6 +190,7 @@ _register(
     update_schema=SalesmanUpdate,
     order_by=Salesman.code,
     unique_field="code",
+    scope_column=Salesman.division_id,
 )
 _register(
     router,
@@ -185,6 +201,7 @@ _register(
     update_schema=CustomerUpdate,
     order_by=Customer.code,
     unique_field="code",
+    scope_column=Customer.division_id,
 )
 # ---------- Lawyers (custom: division M2M + "All Companies" flag) ----------
 def _lawyer_to_read(obj: Lawyer) -> LawyerRead:

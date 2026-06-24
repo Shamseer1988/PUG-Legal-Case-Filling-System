@@ -13,6 +13,9 @@ class ClosureBase(BaseModel):
     )
     command: str = ""
     settled_amount: Decimal = Decimal("0")
+    # Phase 39: discount given to the customer at closure. Computed
+    # against ``case.actual_due_amount`` (not legal_filing_amount).
+    discount_amount: Decimal = Decimal("0")
     settled_date: date | None = None
 
     # Court cheque

@@ -55,6 +55,14 @@ class CaseClosure(Base, TimestampMixin):
     settled_amount: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), default=0, nullable=False
     )
+    # Phase 39: discount applied at closure, computed against the
+    # case's actual_due_amount (NOT legal_filing_amount). Stored
+    # explicitly so reports and the audit trail can show how much
+    # the customer was relieved of, instead of forcing readers to
+    # back-calculate it from the case.
+    discount_amount: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), default=0, nullable=False
+    )
     settled_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     # Typed settlement details

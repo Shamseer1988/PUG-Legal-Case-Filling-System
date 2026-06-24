@@ -320,7 +320,7 @@ def update_case(
 ) -> CaseRead:
     case = _get_case_or_404(db, user, case_id)
     try:
-        case = case_service.update_case(db, case, payload)
+        case = case_service.update_case(db, case, payload, user)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     return CaseRead.model_validate(case)

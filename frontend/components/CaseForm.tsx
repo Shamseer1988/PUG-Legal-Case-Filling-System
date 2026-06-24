@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
+import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 import { useMasterOptions } from '@/lib/useMasters';
 import { CaseTimeline } from '@/components/CaseTimeline';
 import { CaseActions } from '@/components/CaseActions';
@@ -106,6 +107,7 @@ const EMPTY_CASE: CaseDraft = {
 export function CaseForm({ caseId }: { caseId?: number }) {
   const router = useRouter();
   const me = useAuthStore((s) => s.me);
+  const caps = useCapabilitiesStore((s) => s.caps);
   const [logoErr, setLogoErr] = useState(false);
 
   const customers = useMasterOptions('/api/v1/masters/customers', 'name');
@@ -131,7 +133,18 @@ export function CaseForm({ caseId }: { caseId?: number }) {
   const [info, setInfo] = useState<string | null>(null);
 
   const isEdit = caseId !== undefined;
-  const locked = !!meta && meta.status !== 'Draft';
+  // Phase 39: the Accountant can keep editing the case while it's
+  // still sitting at Sales Manager (status=Submitted) and SM hasn't
+  // acted yet. As soon as any approver acts (Approve / Reject /
+  // Clarify), the stage or status flips and the case locks. The
+  // backend enforces the same rule - this is just the matching UI
+  // gate so the inputs aren't grey when the user can actually save.
+  const editableAtSalesMgr =
+    !!meta &&
+    meta.status === 'Submitted' &&
+    meta.current_stage === 'Sales Manager' &&
+    me?.id === (meta.created_by_id as number | undefined);
+  const locked = !!meta && meta.status !== 'Draft' && !editableAtSalesMgr;
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
@@ -146,6 +159,57 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       }
     })();
   }, [caseId, isEdit, reloadKey]);
+
+  // Phase 39: on a brand-new case the Accountant's division is
+  // auto-filled from their division mapping. If they're mapped
+  // to exactly one division we lock it in; if they're mapped to
+  // many, we pre-pick the first so the dependent dropdowns
+  // (customer, signatories) have something to scope by - the
+  // user can still pick a different one before saving.
+  useEffect(() => {
+    if (isEdit) return;
+    const mine = caps?.divisions ?? [];
+    if (mine.length === 0) return;
+    setDraft((d) => (d.division_id == null ? { ...d, division_id: mine[0] } : d));
+  }, [isEdit, caps?.divisions]);
+
+  // Phase 39: when the user picks a customer, mirror the customer's
+  // mapped salesman + division onto the draft. The salesman is set
+  // up under Customer master, so re-typing it on every case is
+  // wasteful (and error-prone). The user can still override either
+  // field after auto-fill by editing the dropdown.
+  useEffect(() => {
+    const cid = draft.customer_id;
+    if (!cid || locked) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const cust = await api<{
+          id: number;
+          division_id: number | null;
+          salesman_id: number | null;
+        }>(`/api/v1/masters/customers/${cid}`);
+        if (cancelled) return;
+        setDraft((d) => {
+          // Only touch fields the user hasn't already set so we
+          // don't clobber a deliberate override.
+          const next = { ...d };
+          if (cust.salesman_id && next.salesman_id == null) {
+            next.salesman_id = cust.salesman_id;
+          }
+          if (cust.division_id && next.division_id == null) {
+            next.division_id = cust.division_id;
+          }
+          return next;
+        });
+      } catch {
+        /* customer detail fetch is best-effort */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.customer_id, locked]);
 
   // Auto-pick signatories when there's exactly one candidate — common
   // for Auditor, Chairman / MD and small divisions where the user
@@ -707,10 +771,21 @@ export function CaseForm({ caseId }: { caseId?: number }) {
 
       {isEdit && meta && (
         <Card title="Attachments">
+          {/* Phase 39: attachments are uploadable at every point in
+              the lifecycle - a renewed CR Copy or new Computer Card
+              may arrive months/years after the case was submitted.
+              Removal is only blocked once the case is Closed or
+              Rejected (the audit trail must stay intact for finalised
+              cases).
+          */}
           <CategorizedAttachments
             caseId={meta.id}
             attachments={meta.attachments}
-            locked={locked}
+            locked={
+              meta.status === 'Closed' ||
+              meta.status === 'Rejected' ||
+              !canDoAction(caps, ACTION.CASE_CREATE)
+            }
             onChange={(atts) => setMeta({ ...meta, attachments: atts })}
           />
         </Card>

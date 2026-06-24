@@ -11,6 +11,9 @@ type Closure = {
   closure_type: string;
   command: string;
   settled_amount: string;
+  // Phase 39: discount given at closure, calculated against the
+  // case's actual_due_amount.
+  discount_amount: string;
   settled_date: string | null;
   court_cheque_number: string;
   court_cheque_bank: string;
@@ -23,6 +26,11 @@ type Closure = {
   writeoff_reason: string;
   closed_by_name: string;
   closed_at: string;
+};
+
+type CaseAmounts = {
+  actual_due_amount: string;
+  legal_filing_amount: string;
 };
 
 const TYPES: { value: string; label: string }[] = [
@@ -126,6 +134,12 @@ export function ClosurePanel({ caseId, status, onChange }: Props) {
   );
 }
 
+function parseAmount(value: string | number | null | undefined): number {
+  if (value == null) return 0;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
 function CloseCaseModal({
   caseId,
   onClose,
@@ -138,10 +152,30 @@ function CloseCaseModal({
   const [step, setStep] = useState<'confirm' | 'form'>('confirm');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Phase 39: pull the case's amounts so the closure UI can compute
+  // Final Settled = Actual Due - Discount in real time. Legal Filing
+  // is shown read-only as context.
+  const [amounts, setAmounts] = useState<CaseAmounts | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const c = await api<CaseAmounts>(`/api/v1/cases/${caseId}`);
+        if (!cancelled) setAmounts(c);
+      } catch {
+        /* best-effort - if the fetch fails the operator still
+           sees the form and can fill it manually */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [caseId]);
   const [draft, setDraft] = useState({
     closure_type: 'court_cheque',
     command: '',
     settled_amount: '',
+    discount_amount: '',
     settled_date: '',
     court_cheque_number: '',
     court_cheque_bank: '',
@@ -154,6 +188,21 @@ function CloseCaseModal({
     writeoff_reason: '',
   });
 
+  // Phase 39: whenever the user changes the Discount input, mirror
+  // the computed (actual_due - discount) into settled_amount unless
+  // the user has explicitly overridden it. We track the override
+  // via a "user typed in settled_amount themselves" flag below.
+  const [settledTouched, setSettledTouched] = useState(false);
+  const actualDue = parseAmount(amounts?.actual_due_amount);
+  const discount = parseAmount(draft.discount_amount);
+  const computedSettled = Math.max(0, actualDue - discount);
+  useEffect(() => {
+    if (settledTouched) return;
+    setDraft((d) => ({ ...d, settled_amount: computedSettled.toFixed(2) }));
+    // Re-running on draft.discount_amount + amounts only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft.discount_amount, amounts?.actual_due_amount]);
+
   async function save() {
     setBusy(true);
     setErr(null);
@@ -161,6 +210,7 @@ function CloseCaseModal({
       const payload = {
         ...draft,
         settled_amount: draft.settled_amount || '0',
+        discount_amount: draft.discount_amount || '0',
         settled_date: draft.settled_date || null,
         court_cheque_date: draft.court_cheque_date || null,
       };
@@ -229,6 +279,63 @@ function CloseCaseModal({
 
           {step === 'form' && (
             <>
+              {/* Phase 39: closure math banner. Shows the case's
+                  actual_due_amount as the reference, the operator-
+                  entered discount, and the computed final settled
+                  amount. Legal filing amount is shown read-only
+                  for context but no calculation runs against it.
+              */}
+              {amounts && (
+                <div className="rounded-md border border-pug-gold-500/30 bg-pug-gold-500/10 px-4 py-3 text-sm">
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-1 md:grid-cols-4">
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                        Actual Due
+                      </div>
+                      <div className="font-semibold tabular-nums">
+                        {actualDue.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                        Discount
+                      </div>
+                      <div className="font-semibold tabular-nums text-rose-600">
+                        {(-discount).toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                        Final Settled
+                      </div>
+                      <div className="font-bold tabular-nums text-emerald-700 dark:text-emerald-300">
+                        {computedSettled.toLocaleString(undefined, {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                        Legal Filing (ref.)
+                      </div>
+                      <div className="tabular-nums text-[rgb(var(--color-muted))]">
+                        {parseAmount(amounts.legal_filing_amount).toLocaleString(
+                          undefined,
+                          { minimumFractionDigits: 2, maximumFractionDigits: 2 },
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <Field label="Closure Type" required>
                   <select
@@ -243,12 +350,28 @@ function CloseCaseModal({
                     ))}
                   </select>
                 </Field>
+                <Field label="Discount">
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={draft.discount_amount}
+                    onChange={(e) =>
+                      setDraft({ ...draft, discount_amount: e.target.value })
+                    }
+                    className={inputCls + ' text-right tabular-nums'}
+                    placeholder="0.00"
+                  />
+                </Field>
                 <Field label="Settled Amount">
                   <input
                     type="number"
                     step="0.01"
                     value={draft.settled_amount}
-                    onChange={(e) => setDraft({ ...draft, settled_amount: e.target.value })}
+                    onChange={(e) => {
+                      setSettledTouched(true);
+                      setDraft({ ...draft, settled_amount: e.target.value });
+                    }}
                     className={inputCls + ' text-right tabular-nums'}
                   />
                 </Field>
@@ -404,6 +527,13 @@ function ClosureSummary({ closure }: { closure: Closure }) {
       <Pair
         k="Type"
         v={TYPES.find((t) => t.value === closure.closure_type)?.label ?? closure.closure_type}
+      />
+      <Pair
+        k="Discount"
+        v={Number(closure.discount_amount ?? 0).toLocaleString(undefined, {
+          minimumFractionDigits: 2,
+          maximumFractionDigits: 2,
+        })}
       />
       <Pair
         k="Settled Amount"
