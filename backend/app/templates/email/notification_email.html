@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#eef1f9;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#1c2233;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="600" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
+          <!-- Brand bar -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0b1020 0%,#1a234a 60%,#2a3669 100%);padding:18px 24px;border-bottom:3px solid #c9a14a;">
+              <table role="presentation" width="100%"><tr>
+                <td style="vertical-align:middle;">
+                  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                    <td style="width:42px;height:42px;background:#c9a14a;color:#0b1020;font-weight:800;border-radius:50%;text-align:center;line-height:42px;font-size:14px;">PUG</td>
+                    <td style="padding-left:12px;color:#ffffff;">
+                      <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#c9a14a;font-weight:700;">{{ brand_company_name }}</div>
+                      <div style="font-size:15px;font-weight:600;">Legal Case Control System</div>
+                    </td>
+                  </tr></table>
+                </td>
+              </tr></table>
+            </td>
+          </tr>
+
+          <!-- Body -->
+          <tr>
+            <td style="padding:26px 28px 4px;">
+              <h1 style="margin:0 0 6px;font-size:18px;color:#1a234a;">{{ title }}</h1>
+              {% if subtitle %}<div style="font-size:13px;color:#5b6478;margin-bottom:16px;">{{ subtitle }}</div>{% endif %}
+            </td>
+          </tr>
+
+          {% if lines %}
+          <tr>
+            <td style="padding:0 28px 8px;font-size:14px;line-height:1.55;">
+              {% for line in lines %}<p style="margin:0 0 10px;">{{ line }}</p>{% endfor %}
+            </td>
+          </tr>
+          {% endif %}
+
+          {% if facts %}
+          <tr>
+            <td style="padding:8px 28px 4px;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e3e7f0;border-radius:8px;border-collapse:separate;">
+                {% for k, v in facts %}
+                <tr>
+                  <td style="padding:8px 12px;background:#f7f8fc;color:#5b6478;font-size:12px;text-transform:uppercase;letter-spacing:1px;font-weight:600;width:38%;border-bottom:1px solid #e3e7f0;">{{ k }}</td>
+                  <td style="padding:8px 12px;font-size:13px;color:#1c2233;border-bottom:1px solid #e3e7f0;">{{ v }}</td>
+                </tr>
+                {% endfor %}
+              </table>
+            </td>
+          </tr>
+          {% endif %}
+
+          {% if action_url %}
+          <tr>
+            <td style="padding:18px 28px 6px;">
+              <a href="{{ action_url }}" style="display:inline-block;background:#c9a14a;color:#0b1020;text-decoration:none;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;">
+                {{ action_label or "Open in System" }}
+              </a>
+            </td>
+          </tr>
+          {% endif %}
+
+          <tr>
+            <td style="padding:18px 28px 24px;font-size:11px;color:#8a91a3;">
+              You are receiving this because you are a signatory or stakeholder on this case.
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f7f8fc;padding:14px 28px;border-top:1px solid #e3e7f0;font-size:11px;color:#8a91a3;text-align:center;">
+              &copy; {{ brand_company_name }} &middot; Legal Case Control System<br/>
+              This is an automated notification. Replies are not monitored.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

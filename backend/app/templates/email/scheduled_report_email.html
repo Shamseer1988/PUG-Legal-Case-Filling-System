@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>{{ subject }}</title>
+</head>
+<body style="margin:0;padding:0;background:#eef1f9;font-family:Segoe UI,Roboto,Arial,sans-serif;color:#1c2233;">
+  <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="padding:24px 12px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="640" style="background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
+          <!-- Brand bar -->
+          <tr>
+            <td style="background:linear-gradient(135deg,#0b1020 0%,#1a234a 60%,#2a3669 100%);padding:18px 24px;border-bottom:3px solid #c9a14a;">
+              <table role="presentation" width="100%"><tr>
+                <td style="vertical-align:middle;">
+                  <table role="presentation" cellpadding="0" cellspacing="0"><tr>
+                    <td style="width:42px;height:42px;background:#c9a14a;color:#0b1020;font-weight:800;border-radius:50%;text-align:center;line-height:42px;font-size:14px;">PUG</td>
+                    <td style="padding-left:12px;color:#ffffff;">
+                      <div style="font-size:10px;letter-spacing:2px;text-transform:uppercase;color:#c9a14a;font-weight:700;">{{ brand_company_name }}</div>
+                      <div style="font-size:15px;font-weight:600;">Scheduled Report</div>
+                    </td>
+                  </tr></table>
+                </td>
+                <td align="right" style="color:#cbd2e0;font-size:10px;">
+                  Run at<br/><strong style="color:#ffffff;font-size:11px;">{{ run_at }}</strong>
+                </td>
+              </tr></table>
+            </td>
+          </tr>
+
+          <!-- Title -->
+          <tr>
+            <td style="padding:26px 28px 4px;">
+              <div style="font-size:11px;color:#8a91a3;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">{{ schedule_name }}</div>
+              <h1 style="margin:4px 0 6px;font-size:20px;color:#1a234a;">{{ report_title }}</h1>
+              {% if report_subtitle %}<div style="font-size:13px;color:#5b6478;">{{ report_subtitle }}</div>{% endif %}
+            </td>
+          </tr>
+
+          <!-- KPI -->
+          <tr>
+            <td style="padding:14px 28px 0;">
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="background:#f7f8fc;border:1px solid #e3e7f0;border-radius:8px;padding:14px 18px;">
+                    <div style="font-size:10px;color:#8a91a3;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;">Rows in this run</div>
+                    <div style="font-size:28px;font-weight:800;color:#1a234a;line-height:1.1;margin-top:2px;">{{ rows_count }}</div>
+                    {% if formats %}<div style="font-size:11px;color:#8a91a3;margin-top:6px;">Attached: {{ formats | join(', ') | upper }}</div>{% endif %}
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- Sample rows -->
+          {% if sample_rows %}
+          <tr>
+            <td style="padding:16px 28px 4px;">
+              <div style="font-size:11px;color:#8a91a3;text-transform:uppercase;letter-spacing:1.5px;font-weight:700;margin-bottom:6px;">Top rows</div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border:1px solid #e3e7f0;border-radius:8px;">
+                <thead>
+                  <tr>
+                    {% for col in sample_cols %}
+                    <th style="background:#1a234a;color:#ffffff;font-size:11px;font-weight:700;text-align:left;padding:8px 10px;letter-spacing:0.5px;">{{ col.label }}</th>
+                    {% endfor %}
+                  </tr>
+                </thead>
+                <tbody>
+                  {% for row in sample_rows %}
+                  <tr style="background:{{ '#ffffff' if loop.index0 % 2 == 0 else '#f7f8fc' }};">
+                    {% for col in sample_cols %}
+                    <td style="padding:6px 10px;font-size:12px;color:#1c2233;border-top:1px solid #e3e7f0;">{{ row[col.key] | default('-') }}</td>
+                    {% endfor %}
+                  </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+              {% if rows_count > sample_rows | length %}
+              <div style="font-size:11px;color:#8a91a3;margin-top:6px;">Showing first {{ sample_rows | length }} of {{ rows_count }} rows. Full data in the attachments.</div>
+              {% endif %}
+            </td>
+          </tr>
+          {% endif %}
+
+          <!-- CTA -->
+          {% if action_url %}
+          <tr>
+            <td style="padding:18px 28px 6px;">
+              <a href="{{ action_url }}" style="display:inline-block;background:#c9a14a;color:#0b1020;text-decoration:none;padding:10px 18px;border-radius:6px;font-size:13px;font-weight:700;">
+                Open in System
+              </a>
+            </td>
+          </tr>
+          {% endif %}
+
+          <!-- Notes -->
+          {% if notes %}
+          <tr>
+            <td style="padding:8px 28px 0;font-size:12px;color:#5b6478;font-style:italic;">{{ notes }}</td>
+          </tr>
+          {% endif %}
+
+          <tr>
+            <td style="padding:18px 28px 24px;font-size:11px;color:#8a91a3;">
+              Sent automatically by the Legal Case Control System.
+            </td>
+          </tr>
+
+          <!-- Footer -->
+          <tr>
+            <td style="background:#f7f8fc;padding:14px 28px;border-top:1px solid #e3e7f0;font-size:11px;color:#8a91a3;text-align:center;">
+              &copy; {{ brand_company_name }} &middot; Legal Case Control System<br/>
+              This is an automated notification. Replies are not monitored.
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

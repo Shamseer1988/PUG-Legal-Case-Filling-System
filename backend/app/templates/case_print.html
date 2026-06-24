@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Legal Case Application — {{ case.case_no }}</title>
+<style>
+  @page { size: A4; margin: 14mm 14mm 18mm; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', Roboto, Arial, sans-serif;
+    color: #1c2233;
+    font-size: 11pt;
+    margin: 0;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 3px solid #c9a14a;
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+  }
+  .brand .logo {
+    width: 46px; height: 46px;
+    background: #c9a14a;
+    color: #0b1020;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800;
+    font-size: 14pt;
+  }
+  .brand .title small {
+    display: block;
+    text-transform: uppercase;
+    color: #8a6b22;
+    letter-spacing: 2px;
+    font-size: 8pt;
+  }
+  .brand .title strong {
+    font-size: 13pt;
+  }
+  .brand .meta {
+    margin-left: auto;
+    text-align: right;
+    font-size: 9pt;
+    color: #5b6478;
+  }
+  h2 {
+    background: #f7f8fc;
+    border-left: 3px solid #c9a14a;
+    padding: 4px 8px;
+    font-size: 10pt;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #1a234a;
+    margin: 14px 0 6px;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .kv td { padding: 4px 6px; vertical-align: top; }
+  .kv td.k { color: #5b6478; width: 30%; font-weight: 600; }
+  .grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 16px;
+  }
+  table.cheques th, table.cheques td {
+    border: 1px solid #c9d0e0;
+    padding: 4px 6px;
+    font-size: 9.5pt;
+    text-align: left;
+  }
+  table.cheques th { background: #f7f8fc; }
+  .signatories {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-top: 22px;
+  }
+  .signatories .box {
+    border: 1px solid #c9d0e0;
+    border-radius: 4px;
+    padding: 8px 8px 32px;
+    font-size: 9pt;
+  }
+  .signatories .role {
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 8pt;
+    color: #8a6b22;
+    font-weight: 700;
+  }
+  .footer {
+    margin-top: 20px;
+    text-align: center;
+    color: #8a91a3;
+    font-size: 8pt;
+  }
+  .flag {
+    display: inline-block;
+    border: 1px solid #1a234a;
+    padding: 1px 6px;
+    margin-right: 6px;
+    font-size: 9pt;
+    border-radius: 3px;
+  }
+  .flag.on {
+    background: #c9a14a;
+    color: #0b1020;
+    border-color: #8a6b22;
+    font-weight: 700;
+  }
+</style>
+</head>
+<body>
+
+<div class="brand">
+  <div class="logo">PUG</div>
+  <div class="title">
+    <small>Paris United Group Holding</small>
+    <strong>Legal Case Application Form</strong>
+  </div>
+  <div class="meta">
+    <div><strong>Case No:</strong> {{ case.case_no }}</div>
+    <div><strong>Status:</strong> {{ case.status }} &middot; {{ case.current_stage }}</div>
+    <div><strong>Printed:</strong> {{ now }}</div>
+  </div>
+</div>
+
+<h2>Case Filing</h2>
+<div style="margin-bottom: 6px;">
+  <span class="flag {% if case.is_criminal %}on{% endif %}">Criminal</span>
+  <span class="flag {% if case.is_civil %}on{% endif %}">Civil</span>
+  <span class="flag {% if case.is_criminal and case.is_civil %}on{% endif %}">Both</span>
+</div>
+
+<h2>Customer &amp; Division</h2>
+<div class="grid">
+  <table class="kv">
+    <tr><td class="k">Customer</td><td>{{ refs.customer.name if refs.customer else case.customer_id }}</td></tr>
+    <tr><td class="k">Customer Code</td><td>{{ refs.customer.code if refs.customer else "-" }}</td></tr>
+    <tr><td class="k">Customer Type</td><td>{{ case.customer_type }}</td></tr>
+    <tr><td class="k">Division</td><td>{{ refs.division.name if refs.division else case.division_id }}</td></tr>
+    <tr><td class="k">Salesman</td><td>{{ refs.salesman.name if refs.salesman else "-" }}</td></tr>
+  </table>
+  <table class="kv">
+    <tr><td class="k">Case Date</td><td>{{ case.created_at.strftime('%Y-%m-%d') }}</td></tr>
+    <tr><td class="k">Deposit Date</td><td>{{ case.deposit_date or "-" }}</td></tr>
+    <tr><td class="k">Bank (Default)</td><td>{{ refs.bank.name if refs.bank else "-" }}</td></tr>
+    <tr><td class="k">Actual Due Amount</td><td>{{ "%.2f"|format(case.actual_due_amount) }}</td></tr>
+    <tr><td class="k">Legal Filing Amount</td><td>{{ "%.2f"|format(case.legal_filing_amount) }}</td></tr>
+  </table>
+</div>
+
+<h2>Cheque Details</h2>
+{% if case.cheques %}
+<table class="cheques">
+  <thead>
+    <tr>
+      <th>#</th>
+      <th>Cheque No</th>
+      <th>Bank</th>
+      <th>Amount</th>
+      <th>Date</th>
+      <th>Type</th>
+      <th>Bounce Reason</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for ch in case.cheques %}
+    <tr>
+      <td>{{ loop.index }}</td>
+      <td>{{ ch.cheque_number }}</td>
+      <td>{{ refs.bank_by_id.get(ch.bank_id).name if ch.bank_id and refs.bank_by_id.get(ch.bank_id) else ch.bank_name_text }}</td>
+      <td>{{ "%.2f"|format(ch.amount) }}</td>
+      <td>{{ ch.cheque_date or "-" }}</td>
+      <td>{{ ch.cheque_type }}</td>
+      <td>{{ ch.bounce_reason }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div style="color:#8a91a3;font-style:italic">No cheques attached.</div>
+{% endif %}
+
+<h2>Commands / Remarks</h2>
+<div style="border:1px solid #c9d0e0; padding:6px 8px; min-height:40px; white-space:pre-wrap;">
+{{ case.commands or "-" }}
+</div>
+
+<h2>Attachments</h2>
+{% if case.attachments %}
+{# Phase 39: inline list of unique categories joined by bullets,
+   so the printed form reads as one flowing line:
+   "Credit Application . Computer Card . Shop Address". One entry
+   per category - multiples in the same category collapse. #}
+{% set seen = [] %}
+{% for a in case.attachments %}
+  {% set cat = (a.category or "-")|trim %}
+  {% if cat and cat not in seen %}{% set _ = seen.append(cat) %}{% endif %}
+{% endfor %}
+<div>{{ seen | join(" . ") }}</div>
+{% else %}
+<div style="color:#8a91a3;font-style:italic">No attachments uploaded.</div>
+{% endif %}
+
+<div class="signatories">
+  {% for sig in signatory_grid %}
+  <div class="box">
+    <div class="role">{{ sig.role }}</div>
+    <div>{{ sig.name or '&nbsp;' }}</div>
+    <div style="border-top:1px solid #1a234a; margin-top:18px; padding-top:2px; font-size:8pt; color:#8a91a3">
+      Signature &amp; Date
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="footer">
+  &copy; Paris United Group Holding &middot; Legal Case Control System &middot; {{ case.case_no }}
+</div>
+
+</body>
+</html>

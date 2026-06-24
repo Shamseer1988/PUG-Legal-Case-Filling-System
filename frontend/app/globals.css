@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --color-bg: 247 248 252;
+    --color-fg: 28 34 51;
+    --color-muted: 91 100 120;
+    --color-border: 227 231 240;
+    --color-card: 255 255 255;
+  }
+  .dark {
+    --color-bg: 11 16 32;
+    --color-fg: 232 236 248;
+    --color-muted: 168 177 199;
+    --color-border: 42 51 88;
+    --color-card: 18 26 51;
+  }
+  html,
+  body {
+    @apply min-h-screen;
+    background: rgb(var(--color-bg));
+    color: rgb(var(--color-fg));
+  }
+}
+
+/* ---- Print-optimised view (used by Ctrl+P on any page) ---- */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 14mm 16mm;
+  }
+  /* Hide app chrome */
+  aside,
+  header,
+  nav,
+  .print\:hidden {
+    display: none !important;
+  }
+  body {
+    background: #ffffff !important;
+    color: #1c2233 !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  /* Brand strip on every printed page (best-effort) */
+  body::before {
+    content: 'Paris United Group Holding  -  Legal Case Control System';
+    display: block;
+    border-bottom: 3px solid #c9a14a;
+    color: #1a234a;
+    font-weight: 700;
+    font-size: 12pt;
+    padding-bottom: 4px;
+    margin-bottom: 8px;
+  }
+  table {
+    page-break-inside: auto;
+    border-collapse: collapse;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  thead {
+    display: table-header-group;
+  }
+  /* Neutralise card chrome */
+  .report-area,
+  section,
+  .shadow-soft {
+    background: #ffffff !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+  th,
+  td {
+    border: 1px solid #c9d0e0 !important;
+    color: #1c2233 !important;
+  }
+  th {
+    background: #1a234a !important;
+    color: #ffffff !important;
+  }
+}

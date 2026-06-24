@@ -1,0 +1,1159 @@
+"""Case CRUD, attachments and branded print view."""
+
+from datetime import datetime
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    UploadFile,
+    status,
+)
+from fastapi.responses import FileResponse, Response
+from sqlalchemy.orm import Session
+
+from app.core.attachment_categories import normalise_category
+from app.core.data_scope import allowed_division_ids
+from app.core.deps import get_current_user, require_permission
+from app.core.permissions import CASES_CREATE, CASES_READ, CASES_SIGNED_FORM
+from app.db.session import get_db
+from app.models.case import (
+    CASE_STATUS_DRAFT,
+    Case,
+    CaseAttachment,
+    CaseTransitionAttachment,
+    Cheque,
+    ChequeAttachment,
+)
+from app.models.user import User
+from app.schemas.approval import (
+    TimelineEntry,
+    TransitionAttachmentRead,
+    TransitionRequest,
+)
+from app.schemas.case import (
+    AttachmentRead,
+    CaseCreate,
+    CaseListItem,
+    CaseRead,
+    CaseSearchHit,
+    CaseSearchPage,
+    CaseSearchRow,
+    CaseUpdate,
+    ChequeAttachmentRead,
+    ChequeAttachmentUploadResult,
+    ChequeOcrFields,
+)
+from app.schemas.closure import ClosureCreate, ClosureRead
+from app.services import (
+    audit_service,
+    case_service,
+    cheque_ocr,
+    closure_service,
+    notification_service,
+    render,
+    storage,
+    workflow_service,
+)
+
+router = APIRouter(prefix="/cases", tags=["cases"])
+
+
+def _scoped_query(db: Session, user: User):
+    q = db.query(Case)
+    allowed = allowed_division_ids(user)
+    if allowed is None:
+        return q
+    if not allowed:
+        # No division mapping -> can only see their own drafts.
+        return q.filter(Case.created_by_id == user.id)
+    return q.filter(Case.division_id.in_(allowed))
+
+
+@router.get("", response_model=list[CaseListItem])
+def list_cases(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> list[CaseListItem]:
+    rows = _scoped_query(db, user).order_by(Case.id.desc()).limit(500).all()
+    return [CaseListItem.model_validate(r) for r in rows]
+
+
+@router.get("/search", response_model=list[CaseSearchHit])
+def search_cases(
+    q: str = "",
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> list[CaseSearchHit]:
+    """Typeahead for the case-picker on reports / dashboards.
+
+    Returns matching cases scoped to the user's divisions (super
+    users / wildcard-perm users see all). Matches against either
+    the case number or the customer's name.
+    """
+    from app.models.masters import Customer, Division
+
+    query = _scoped_query(db, user).join(
+        Customer, Case.customer_id == Customer.id
+    ).join(Division, Case.division_id == Division.id)
+    needle = (q or "").strip()
+    if needle:
+        like = f"%{needle}%"
+        query = query.filter(
+            (Case.case_no.ilike(like)) | (Customer.name.ilike(like))
+        )
+    rows = (
+        query.with_entities(
+            Case.id,
+            Case.case_no,
+            Customer.name,
+            Division.name,
+            Case.legal_filing_amount,
+            Case.status,
+        )
+        .order_by(Case.id.desc())
+        .limit(max(1, min(limit, 100)))
+        .all()
+    )
+    return [
+        CaseSearchHit(
+            id=r[0],
+            case_no=r[1],
+            customer_name=r[2] or "",
+            division_name=r[3] or "",
+            legal_filing_amount=r[4] or 0,
+            status=r[5],
+        )
+        for r in rows
+    ]
+
+
+@router.get("/search-full", response_model=CaseSearchPage)
+def search_cases_full(
+    q: str = "",
+    status_in: list[str] = Query(default=[]),
+    stage_in: list[str] = Query(default=[]),
+    division_id_in: list[int] = Query(default=[]),
+    amount_min: float | None = None,
+    amount_max: float | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    is_criminal: bool | None = None,
+    is_civil: bool | None = None,
+    limit: int = 25,
+    offset: int = 0,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> CaseSearchPage:
+    """Advanced cases search with filters + pagination.
+
+    Powers the Cases page filter sidebar. Search is a single
+    ``q`` string matched (case-insensitive) against case_no,
+    customer name + code, and the commands free-text field;
+    everything else is a structured filter.
+
+    Pagination uses ``limit`` (max 200) + ``offset``; the
+    response carries ``total`` so the UI can render "Showing
+    1-25 of 137" headers without a second request.
+    """
+    from app.models.masters import Customer, Division
+
+    base = (
+        _scoped_query(db, user)
+        .join(Customer, Case.customer_id == Customer.id)
+        .join(Division, Case.division_id == Division.id)
+    )
+
+    needle = (q or "").strip()
+    if needle:
+        like = f"%{needle}%"
+        base = base.filter(
+            (Case.case_no.ilike(like))
+            | (Customer.name.ilike(like))
+            | (Customer.code.ilike(like))
+            | (Case.commands.ilike(like))
+        )
+
+    if status_in:
+        base = base.filter(Case.status.in_(status_in))
+    if stage_in:
+        base = base.filter(Case.current_stage.in_(stage_in))
+    if division_id_in:
+        base = base.filter(Case.division_id.in_(division_id_in))
+    if amount_min is not None:
+        base = base.filter(Case.legal_filing_amount >= amount_min)
+    if amount_max is not None:
+        base = base.filter(Case.legal_filing_amount <= amount_max)
+    if date_from:
+        try:
+            df = datetime.fromisoformat(date_from)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Bad date_from: {e}") from e
+        base = base.filter(Case.created_at >= df)
+    if date_to:
+        try:
+            dt = datetime.fromisoformat(date_to)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Bad date_to: {e}") from e
+        base = base.filter(Case.created_at <= dt)
+    if is_criminal is not None:
+        base = base.filter(Case.is_criminal.is_(is_criminal))
+    if is_civil is not None:
+        base = base.filter(Case.is_civil.is_(is_civil))
+
+    # Count the filtered universe before paging so the UI can show
+    # "showing N of M". Subquery on a single column is the cheapest
+    # way to count after JOINs.
+    total = base.with_entities(Case.id).count()
+
+    rows = (
+        base.with_entities(
+            Case.id,
+            Case.case_no,
+            Customer.id,
+            Customer.name,
+            Customer.code,
+            Division.id,
+            Division.name,
+            Case.status,
+            Case.current_stage,
+            Case.legal_filing_amount,
+            Case.is_criminal,
+            Case.is_civil,
+            Case.created_at,
+            Case.submitted_at,
+            Case.sla_due_at,
+        )
+        .order_by(Case.id.desc())
+        .offset(max(0, offset))
+        .limit(max(1, min(limit, 200)))
+        .all()
+    )
+
+    items = [
+        CaseSearchRow(
+            id=r[0],
+            case_no=r[1],
+            customer_id=r[2],
+            customer_name=r[3] or "",
+            customer_code=r[4] or "",
+            division_id=r[5],
+            division_name=r[6] or "",
+            status=r[7],
+            current_stage=r[8],
+            legal_filing_amount=r[9] or 0,
+            is_criminal=bool(r[10]),
+            is_civil=bool(r[11]),
+            created_at=r[12],
+            submitted_at=r[13],
+            sla_due_at=r[14],
+        )
+        for r in rows
+    ]
+    return CaseSearchPage(
+        items=items,
+        total=int(total),
+        limit=len(items),
+        offset=max(0, offset),
+    )
+
+
+@router.post("", response_model=CaseRead, status_code=status.HTTP_201_CREATED)
+def create_case(
+    payload: CaseCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> CaseRead:
+    case = case_service.create_case(db, payload, user)
+    audit_service.audit_create(
+        db,
+        "Case",
+        case.id,
+        f"Created case {case.case_no}",
+        {
+            "case_no": case.case_no,
+            "customer_id": case.customer_id,
+            "division_id": case.division_id,
+            "legal_filing_amount": str(case.legal_filing_amount),
+            "is_criminal": case.is_criminal,
+            "is_civil": case.is_civil,
+            "status": case.status,
+        },
+        commit=True,
+    )
+    return CaseRead.model_validate(case)
+
+
+def _get_case_or_404(db: Session, user: User, case_id: int) -> Case:
+    case = _scoped_query(db, user).filter(Case.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+
+@router.get("/{case_id}", response_model=CaseRead)
+def get_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> CaseRead:
+    case = _get_case_or_404(db, user, case_id)
+    # Phase 30: log who's reading this case for forensic queries.
+    # case_views.record_view dedups within COALESCE_SECONDS so
+    # rapid polls don't spam the audit table.
+    from app.services import case_views
+
+    case_views.record_view(db, case.id, user)
+    return CaseRead.model_validate(case)
+
+
+@router.patch("/{case_id}", response_model=CaseRead)
+def update_case(
+    case_id: int,
+    payload: CaseUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> CaseRead:
+    case = _get_case_or_404(db, user, case_id)
+    try:
+        case = case_service.update_case(db, case, payload, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return CaseRead.model_validate(case)
+
+
+@router.post("/{case_id}/submit", response_model=CaseRead)
+def submit_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> CaseRead:
+    case = _get_case_or_404(db, user, case_id)
+    try:
+        case = case_service.submit_case(db, case, user)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return CaseRead.model_validate(case)
+
+
+@router.post("/{case_id}/transition", response_model=CaseRead)
+def transition_case(
+    case_id: int,
+    payload: TransitionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CaseRead:
+    case = _get_case_or_404(db, user, case_id)
+    if not workflow_service.can_act(user, case):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Not authorised to act at stage '{case.current_stage}'",
+        )
+
+    # Validate attachment IDs before mutating the case so we don't
+    # leave a partially-bound transition on the timeline.
+    pending: list[CaseTransitionAttachment] = []
+    if payload.attachment_ids:
+        pending = (
+            db.query(CaseTransitionAttachment)
+            .filter(
+                CaseTransitionAttachment.id.in_(payload.attachment_ids),
+                CaseTransitionAttachment.case_id == case.id,
+                CaseTransitionAttachment.transition_id.is_(None),
+                CaseTransitionAttachment.uploaded_by_id == user.id,
+            )
+            .all()
+        )
+        if len(pending) != len(set(payload.attachment_ids)):
+            raise HTTPException(
+                status_code=400,
+                detail="One or more attachments are unknown, already bound, or owned by another user",
+            )
+
+    try:
+        if payload.action == "approve":
+            case = workflow_service.approve(db, case, user, payload.comment)
+        elif payload.action == "reject":
+            case = workflow_service.reject(db, case, user, payload.comment)
+        elif payload.action == "request_clarification":
+            case = workflow_service.request_clarification(db, case, user, payload.comment)
+        elif payload.action == "resubmit":
+            case = workflow_service.resubmit(db, case, user, payload.comment)
+        elif payload.action == "lawyer_approve":
+            case = workflow_service.lawyer_approve(db, case, user, payload.comment)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unknown action: {payload.action}")
+    except workflow_service.WorkflowError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    # Bind the freshly-created CaseStatusUpdate row to the user's
+    # pre-uploaded attachments. The transition we just executed is
+    # always the case's most-recent timeline entry.
+    if pending and case.timeline:
+        new_transition_id = case.timeline[-1].id
+        for att in pending:
+            att.transition_id = new_transition_id
+        db.commit()
+        db.refresh(case)
+
+    return CaseRead.model_validate(case)
+
+
+@router.get("/{case_id}/timeline", response_model=list[TimelineEntry])
+def case_timeline(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> list[TimelineEntry]:
+    case = _get_case_or_404(db, user, case_id)
+    from app.models.user import User as UserModel
+
+    actor_ids = {t.actor_id for t in case.timeline}
+    for t in case.timeline:
+        for a in t.attachments:
+            actor_ids.add(a.uploaded_by_id)
+    actors: dict[int, str] = {}
+    if actor_ids:
+        for u in db.query(UserModel).filter(UserModel.id.in_(actor_ids)).all():
+            actors[u.id] = u.full_name
+    out: list[TimelineEntry] = []
+    for t in case.timeline:
+        attachments = [
+            TransitionAttachmentRead(
+                id=a.id,
+                case_id=a.case_id,
+                transition_id=a.transition_id,
+                original_filename=a.original_filename,
+                mime_type=a.mime_type,
+                size_bytes=a.size_bytes,
+                uploaded_by_id=a.uploaded_by_id,
+                uploaded_by_name=actors.get(a.uploaded_by_id, ""),
+                created_at=a.created_at,
+            )
+            for a in t.attachments
+        ]
+        out.append(
+            TimelineEntry(
+                id=t.id,
+                action_type=t.action_type,
+                from_status=t.from_status,
+                to_status=t.to_status,
+                from_stage=t.from_stage,
+                to_stage=t.to_stage,
+                actor_id=t.actor_id,
+                actor_name=actors.get(t.actor_id, ""),
+                comment=t.comment,
+                created_at=t.created_at,
+                attachments=attachments,
+            )
+        )
+    return out
+
+
+@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> None:
+    case = _get_case_or_404(db, user, case_id)
+    if case.status != CASE_STATUS_DRAFT:
+        raise HTTPException(status_code=400, detail="Only Draft cases can be deleted")
+    audit_service.audit_delete(
+        db,
+        "Case",
+        case.id,
+        f"Deleted draft case {case.case_no}",
+        {"case_no": case.case_no, "status": case.status},
+    )
+    storage.delete_case_dir(case)
+    db.delete(case)
+    db.commit()
+
+
+# ----------------- Attachments -----------------
+@router.post(
+    "/{case_id}/attachments",
+    response_model=AttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_attachment(
+    case_id: int,
+    file: UploadFile = File(...),
+    category: str = Form("Other Docs"),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> AttachmentRead:
+    case = _get_case_or_404(db, user, case_id)
+    stored, size = storage.save_case_attachment(case, file)
+    att = CaseAttachment(
+        case_id=case.id,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size,
+        category=normalise_category(category),
+        uploaded_by_id=user.id,
+    )
+    db.add(att)
+    db.commit()
+    db.refresh(att)
+    return AttachmentRead.model_validate(att)
+
+
+@router.get("/{case_id}/attachments/{att_id}/download")
+def download_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_case_attachment_path(case, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+    )
+
+
+@router.delete(
+    "/{case_id}/attachments/{att_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> None:
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    storage.delete_case_attachment(case, att.stored_filename)
+    db.delete(att)
+    db.commit()
+
+
+@router.get("/{case_id}/attachments/{att_id}/view")
+def view_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    """Phase 36: same bytes as ``/download`` but with
+    ``Content-Disposition: inline`` so the browser embeds it in
+    the AttachmentViewerModal instead of triggering a save dialog."""
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_case_attachment_path(case, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+        content_disposition_type="inline",
+    )
+
+
+# ----------------- Cheque attachments (Phase 36) -----------------
+def _cheque_or_404(db: Session, case: Case, cheque_id: int) -> Cheque:
+    row = db.get(Cheque, cheque_id)
+    if not row or row.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Cheque not found")
+    return row
+
+
+@router.post(
+    "/{case_id}/cheques/{cheque_id}/attachments",
+    response_model=ChequeAttachmentUploadResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> ChequeAttachmentUploadResult:
+    """Phase 38: upload a CHEQUE COPY (printed cheque image) linked
+    to a single cheque row.
+
+    The file is always fed to the OCR pipeline - cheque images have
+    a standardised layout, so OCR is far more reliable than on the
+    bank return letter (which now lives in the case-level Attachments
+    grid). Extracted #/Bank/Amount/Date come back in the ``ocr``
+    part of the response and the form auto-fills the row. Bounce
+    reason is never returned here - it's not on the cheque.
+
+    Reading the file into memory is fine for typical cheque-copy
+    sizes (<10MB); for larger uploads a future revision can switch
+    to a streaming tee.
+    """
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+
+    # Buffer + persist so we can both stream to disk and feed OCR
+    # without re-reading from the upload's tempfile.
+    blob = file.file.read()
+    mime = (file.content_type or "application/octet-stream").lower()
+
+    # Stream-save by re-using the save helper on a fresh stream.
+    import io
+
+    class _BlobUpload:
+        def __init__(self, b: bytes, name: str, content_type: str) -> None:
+            self.file = io.BytesIO(b)
+            self.filename = name
+            self.content_type = content_type
+
+    stored, size = storage.save_cheque_attachment(
+        case, cheque.id, _BlobUpload(blob, file.filename or "letter", mime)
+    )
+
+    result = cheque_ocr.extract_fields(db, blob=blob, mime=mime)
+    ocr_payload = result.to_payload()
+    # Attaching a cheque copy is an explicit "extract these
+    # values" signal, so OCR overwrites any placeholder text the
+    # user typed before the upload. They can still tweak anything
+    # OCR got wrong - the form re-renders with the new values.
+    if result.cheque_number:
+        cheque.cheque_number = result.cheque_number
+    if result.bank_id:
+        cheque.bank_id = result.bank_id
+    if result.amount is not None:
+        cheque.amount = result.amount
+    if result.cheque_date:
+        cheque.cheque_date = result.cheque_date
+    # bounce_reason is never auto-filled from a cheque image - it
+    # lives on the bank return letter (case-level attachment).
+
+    import json as _json
+
+    # Phase 38: cheque-row uploads are now CHEQUE COPIES. The
+    # legacy ``is_bank_return_letter`` column stays on the row for
+    # rows already persisted under the Phase 36 design - new
+    # uploads always set it False since the bank letter now lives
+    # in the case-level Attachments grid.
+    att = ChequeAttachment(
+        cheque_id=cheque.id,
+        case_id=case.id,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=mime,
+        size_bytes=size,
+        is_bank_return_letter=False,
+        ocr_extracted_json=_json.dumps(ocr_payload) if ocr_payload else "",
+        uploaded_by_id=user.id,
+    )
+    db.add(att)
+    db.commit()
+    db.refresh(att)
+
+    return ChequeAttachmentUploadResult(
+        attachment=ChequeAttachmentRead.model_validate(att),
+        ocr=ChequeOcrFields(**(ocr_payload or {"success": False, "engine": "skipped"})),
+    )
+
+
+@router.get(
+    "/{case_id}/cheques/{cheque_id}/attachments",
+    response_model=list[ChequeAttachmentRead],
+)
+def list_cheque_attachments(
+    case_id: int,
+    cheque_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> list[ChequeAttachmentRead]:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    return [ChequeAttachmentRead.model_validate(a) for a in cheque.attachments]
+
+
+@router.get(
+    "/{case_id}/cheques/{cheque_id}/attachments/{att_id}/download",
+)
+def download_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    att = db.get(ChequeAttachment, att_id)
+    if not att or att.cheque_id != cheque.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_cheque_attachment_path(case, cheque.id, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path, filename=att.original_filename, media_type=att.mime_type
+    )
+
+
+@router.get(
+    "/{case_id}/cheques/{cheque_id}/attachments/{att_id}/view",
+)
+def view_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    att = db.get(ChequeAttachment, att_id)
+    if not att or att.cheque_id != cheque.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_cheque_attachment_path(case, cheque.id, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+        content_disposition_type="inline",
+    )
+
+
+@router.delete(
+    "/{case_id}/cheques/{cheque_id}/attachments/{att_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_cheque_attachment(
+    case_id: int,
+    cheque_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+) -> None:
+    case = _get_case_or_404(db, user, case_id)
+    cheque = _cheque_or_404(db, case, cheque_id)
+    att = db.get(ChequeAttachment, att_id)
+    if not att or att.cheque_id != cheque.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    storage.delete_cheque_attachment(case, cheque.id, att.stored_filename)
+    db.delete(att)
+    db.commit()
+
+
+# ----------------- Print -----------------
+@router.get("/{case_id}/print")
+def print_case(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> Response:
+    case = _get_case_or_404(db, user, case_id)
+    pdf_bytes = render.render_case_pdf(db, case)
+    filename = f"{case.case_no}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+# ----------------- Bulk attachments (ZIP) -----------------
+@router.get("/{case_id}/attachments.zip")
+def download_attachments_zip(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> Response:
+    """One-click ZIP of every attachment on the case."""
+    import io
+    import zipfile
+
+    case = _get_case_or_404(db, user, case_id)
+    atts = list(case.attachments)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        seen: dict[str, int] = {}
+
+        def _arcname(name: str) -> str:
+            if name in seen:
+                seen[name] += 1
+                stem, _, ext = name.rpartition(".")
+                return f"{stem or name}-{seen[name]}{('.' + ext) if ext else ''}"
+            seen[name] = 0
+            return name
+
+        for a in atts:
+            path = storage.get_case_attachment_path(case, a.stored_filename)
+            if not path.exists():
+                continue
+            name = a.original_filename or a.stored_filename
+            try:
+                zf.write(path, arcname=_arcname(name))
+            except Exception:  # pragma: no cover - skip unreadable file
+                continue
+
+        # Phase 36: cheque-level attachments under cheques/cheque-<N>/.
+        cheque_count = 0
+        for idx, cheque in enumerate(case.cheques, start=1):
+            for ca in cheque.attachments:
+                path = storage.get_cheque_attachment_path(
+                    case, cheque.id, ca.stored_filename
+                )
+                if not path.exists():
+                    continue
+                arc = (
+                    f"cheques/cheque-{idx}/"
+                    f"{_arcname(ca.original_filename or ca.stored_filename)}"
+                )
+                try:
+                    zf.write(path, arcname=arc)
+                    cheque_count += 1
+                except Exception:  # pragma: no cover
+                    continue
+
+        # Manifest with original metadata (case + cheque).
+        manifest_lines = [
+            f"{a.id}\tcase\t{a.category}\t{a.size_bytes}\t{a.original_filename}"
+            for a in atts
+        ]
+        for idx, cheque in enumerate(case.cheques, start=1):
+            for ca in cheque.attachments:
+                manifest_lines.append(
+                    f"{ca.id}\tcheque-{idx}\t-\t{ca.size_bytes}\t{ca.original_filename}"
+                )
+        zf.writestr("manifest.tsv", "\n".join(manifest_lines))
+
+    audit_service.record_event(
+        db,
+        action="attachments_zip",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=(
+            f"Downloaded ZIP of {len(atts)} case attachment(s) + "
+            f"{cheque_count} cheque file(s)"
+        ),
+        actor=user,
+        commit=True,
+    )
+
+    fname = f"{case.case_no}-attachments.zip"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+# ----------------- Transition (approval-comment) attachments -----------------
+@router.post(
+    "/{case_id}/transition-attachments",
+    response_model=TransitionAttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_transition_attachment(
+    case_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> TransitionAttachmentRead:
+    """Stage a file to bind to the next transition this user submits.
+
+    The file is stored unbound (``transition_id = NULL``) and is
+    associated with the new ``CaseStatusUpdate`` row when the user
+    POSTs ``/transition`` with the returned attachment ID.
+    """
+    case = _get_case_or_404(db, user, case_id)
+    if not workflow_service.can_act(user, case):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Not authorised to act at stage '{case.current_stage}'",
+        )
+    stored, size = storage.save_transition_attachment(case, file)
+    att = CaseTransitionAttachment(
+        case_id=case.id,
+        transition_id=None,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size,
+        uploaded_by_id=user.id,
+    )
+    db.add(att)
+    db.commit()
+    db.refresh(att)
+    return TransitionAttachmentRead(
+        id=att.id,
+        case_id=att.case_id,
+        transition_id=att.transition_id,
+        original_filename=att.original_filename,
+        mime_type=att.mime_type,
+        size_bytes=att.size_bytes,
+        uploaded_by_id=att.uploaded_by_id,
+        uploaded_by_name=user.full_name,
+        created_at=att.created_at,
+    )
+
+
+@router.get(
+    "/{case_id}/transition-attachments/{att_id}/download",
+)
+def download_transition_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseTransitionAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_transition_attachment_path(case, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+    )
+
+
+@router.get(
+    "/{case_id}/transition-attachments/{att_id}/view",
+)
+def view_transition_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+) -> FileResponse:
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseTransitionAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    path = storage.get_transition_attachment_path(case, att.stored_filename)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=att.original_filename,
+        media_type=att.mime_type,
+        content_disposition_type="inline",
+    )
+
+
+@router.delete(
+    "/{case_id}/transition-attachments/{att_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_transition_attachment(
+    case_id: int,
+    att_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    """Cancel a pending (unbound) attachment. Bound attachments are
+    immutable since they're part of the case's permanent audit trail."""
+    case = _get_case_or_404(db, user, case_id)
+    att = db.get(CaseTransitionAttachment, att_id)
+    if not att or att.case_id != case.id:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if att.transition_id is not None:
+        raise HTTPException(
+            status_code=400, detail="Cannot delete an attachment already bound to a transition"
+        )
+    if att.uploaded_by_id != user.id and not user.is_super:
+        raise HTTPException(status_code=403, detail="Not your attachment")
+    storage.delete_transition_attachment(case, att.stored_filename)
+    db.delete(att)
+    db.commit()
+
+
+# ----------------- Signed case form (FM / Lawyer) -----------------
+SIGNED_FORM_CATEGORY = "Signed Case Form"
+
+
+@router.get("/{case_id}/signed-form", response_model=AttachmentRead | None)
+def get_signed_form(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+):
+    """Return the latest uploaded signed copy of the case form, or
+    ``null`` if none has been attached yet. Any user with read
+    access to the case can see it."""
+    case = _get_case_or_404(db, user, case_id)
+    att = (
+        db.query(CaseAttachment)
+        .filter(
+            CaseAttachment.case_id == case.id,
+            CaseAttachment.category == SIGNED_FORM_CATEGORY,
+        )
+        .order_by(CaseAttachment.id.desc())
+        .first()
+    )
+    return AttachmentRead.model_validate(att) if att else None
+
+
+@router.post(
+    "/{case_id}/signed-form",
+    response_model=AttachmentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_signed_form(
+    case_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_SIGNED_FORM)),
+) -> AttachmentRead:
+    """Attach the signed copy of the printed case form.
+
+    Restricted to Finance Manager / Lawyer roles (anyone holding
+    ``cases:signed_form``). Any previous signed form on the case is
+    removed so only the most recent one is kept - replacing the
+    document is the expected workflow when the form is re-signed.
+    """
+    case = _get_case_or_404(db, user, case_id)
+
+    stored, size = storage.save_case_attachment(case, file)
+    new_att = CaseAttachment(
+        case_id=case.id,
+        original_filename=file.filename or stored,
+        stored_filename=stored,
+        mime_type=file.content_type or "application/octet-stream",
+        size_bytes=size,
+        category=SIGNED_FORM_CATEGORY,
+        uploaded_by_id=user.id,
+    )
+    db.add(new_att)
+    db.flush()
+
+    # Evict any earlier signed forms so a single canonical copy
+    # lives on the case - no stale evidence floating around.
+    olds = (
+        db.query(CaseAttachment)
+        .filter(
+            CaseAttachment.case_id == case.id,
+            CaseAttachment.category == SIGNED_FORM_CATEGORY,
+            CaseAttachment.id != new_att.id,
+        )
+        .all()
+    )
+    for o in olds:
+        storage.delete_case_attachment(case, o.stored_filename)
+        db.delete(o)
+
+    audit_service.record_event(
+        db,
+        action="signed_form_uploaded",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Uploaded signed form '{new_att.original_filename}' for {case.case_no}",
+        meta={"size_bytes": size, "attachment_id": new_att.id},
+        actor=user,
+        commit=True,
+    )
+    db.refresh(new_att)
+    # Surface the upload to the Accountant + Auditor so they can
+    # verify the signed copy matches the approved details.
+    notification_service.on_signed_form_uploaded(db, case, user)
+    db.commit()
+    return AttachmentRead.model_validate(new_att)
+
+
+@router.delete(
+    "/{case_id}/signed-form",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_signed_form(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_SIGNED_FORM)),
+) -> None:
+    case = _get_case_or_404(db, user, case_id)
+    rows = (
+        db.query(CaseAttachment)
+        .filter(
+            CaseAttachment.case_id == case.id,
+            CaseAttachment.category == SIGNED_FORM_CATEGORY,
+        )
+        .all()
+    )
+    if not rows:
+        return
+    for a in rows:
+        storage.delete_case_attachment(case, a.stored_filename)
+        db.delete(a)
+    audit_service.record_event(
+        db,
+        action="signed_form_removed",
+        entity_type="Case",
+        entity_id=case.id,
+        summary=f"Removed signed form for {case.case_no}",
+        actor=user,
+        commit=True,
+    )
+
+
+# ----------------- Closure -----------------
+@router.get("/{case_id}/closure", response_model=ClosureRead | None)
+def get_case_closure(
+    case_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_READ)),
+):
+    case = _get_case_or_404(db, user, case_id)
+    closure = closure_service.get_closure(db, case)
+    if not closure:
+        return None
+    closed_by = db.get(User, closure.closed_by_id)
+    return ClosureRead(
+        **{c: getattr(closure, c) for c in ClosureRead.model_fields if hasattr(closure, c)},
+        closed_by_name=closed_by.full_name if closed_by else "",
+    )
+
+
+@router.post(
+    "/{case_id}/close",
+    response_model=ClosureRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def close_case(
+    case_id: int,
+    payload: ClosureCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(CASES_CREATE)),
+):
+    case = _get_case_or_404(db, user, case_id)
+    try:
+        closure = closure_service.close_case(db, case, user, payload)
+    except closure_service.ClosureError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    closed_by = db.get(User, closure.closed_by_id)
+    # Notify the author + Chairman + FM that the case is now Closed.
+    notification_service.on_case_closed(db, case, user, closure.closure_type)
+    db.commit()
+    return ClosureRead(
+        **{c: getattr(closure, c) for c in ClosureRead.model_fields if hasattr(closure, c)},
+        closed_by_name=closed_by.full_name if closed_by else "",
+    )
+
+
+# This dep is used by the print route to prove auth via either header or query token.
+# Kept for future enhancement; currently relies on the standard bearer token.
+_ = get_current_user

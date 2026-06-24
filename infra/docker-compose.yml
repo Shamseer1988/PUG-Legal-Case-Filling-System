@@ -1,0 +1,52 @@
+# Optional / future cloud deploy stack. Local dev uses ./scripts/dev-*.sh directly.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pug_legal
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  backend:
+    build:
+      context: ..
+      dockerfile: infra/backend.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@postgres:5432/pug_legal
+      REDIS_URL: redis://redis:6379/0
+      STORAGE_LOCAL_PATH: /data/storage
+      BACKUP_LOCAL_PATH: /data/backups
+      CORS_ORIGINS: http://127.0.0.1:3000,http://localhost:3000
+    volumes:
+      - storage:/data/storage
+      - backups:/data/backups
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: infra/frontend.Dockerfile
+    environment:
+      NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+
+volumes:
+  pgdata:
+  storage:
+  backups:

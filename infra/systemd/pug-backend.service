@@ -1,0 +1,32 @@
+# systemd unit for the PUG Legal backend running directly on the host
+# (PugFin-style deployment, no Docker).
+#
+#   sudo cp infra/systemd/pug-backend.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now pug-backend
+[Unit]
+Description=PUG Legal Case Control System - Backend (FastAPI + Scheduler)
+After=network-online.target postgresql.service redis.service
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=pug
+Group=pug
+WorkingDirectory=/opt/pug-legal/backend
+EnvironmentFile=/etc/pug-legal/.env
+ExecStart=/opt/pug-legal/backend/.venv/bin/uvicorn app.main:app \
+    --host 127.0.0.1 --port 8000 --workers 2 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=on-failure
+RestartSec=5s
+StandardOutput=journal
+StandardError=journal
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
