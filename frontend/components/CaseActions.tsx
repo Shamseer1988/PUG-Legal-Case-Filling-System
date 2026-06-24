@@ -43,6 +43,26 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
     currentStage === 'Lawyer' &&
     status === 'Filed' &&
     canDoAction(caps, ACTION.CASE_LAWYER_APPROVE);
+  // Phase 38 fix: every approval stage carries its own capability.
+  // Without this check the frontend shows Approve/Reject/Clarify
+  // to *every* user once a case is submitted - including the
+  // Accountant who's not authorised at that stage. The backend
+  // already rejected such attempts with 403 "Not authorised to
+  // act at stage X"; this just stops surfacing the buttons in
+  // the first place.
+  const STAGE_ACTION: Record<string, string> = {
+    'Sales Manager': ACTION.CASE_APPROVE_SALES_MGR,
+    'Division Manager': ACTION.CASE_APPROVE_DIV_MGR,
+    Audit: ACTION.CASE_APPROVE_AUDIT,
+    'Finance Manager': ACTION.CASE_APPROVE_FM,
+    'Executive Director': ACTION.CASE_APPROVE_ED,
+    'Chairman / MD': ACTION.CASE_APPROVE_FINAL,
+  };
+  const canApproveCurrentStage =
+    isApprovalStage && canDoAction(caps, STAGE_ACTION[currentStage] ?? '');
+  // Resubmit goes back to the Accountant - gated on case-create
+  // since that's the role permission for owning a draft.
+  const canResubmit = isClarifyState && canDoAction(caps, ACTION.CASE_CREATE);
   const isFinal = status === 'Rejected' || status === 'Closed';
 
   if (isFinal) {
@@ -134,7 +154,7 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
 
       {!open && (
         <div className="flex flex-wrap gap-2">
-          {isApprovalStage && (
+          {canApproveCurrentStage && (
             <>
               <Btn variant="green" onClick={() => setOpen('approve')}>
                 <Check className="h-4 w-4" /> Approve
@@ -147,7 +167,7 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
               </Btn>
             </>
           )}
-          {isClarifyState && (
+          {canResubmit && (
             <Btn variant="green" onClick={() => setOpen('resubmit')}>
               <Send className="h-4 w-4" /> Resubmit
             </Btn>
@@ -157,9 +177,13 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
               <Gavel className="h-4 w-4" /> Approve (Lawyer)
             </Btn>
           )}
-          {!isApprovalStage && !isClarifyState && !showLawyerApprove && (
+          {!canApproveCurrentStage && !canResubmit && !showLawyerApprove && (
             <div className="text-xs text-[rgb(var(--color-muted))]">
-              No approval action available at this stage.
+              {isApprovalStage
+                ? `Awaiting ${currentStage} action. You are not authorised to act at this stage.`
+                : isClarifyState
+                  ? 'Awaiting clarification from the case owner.'
+                  : 'No approval action available at this stage.'}
             </div>
           )}
         </div>
