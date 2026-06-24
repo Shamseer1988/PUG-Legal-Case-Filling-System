@@ -15,6 +15,7 @@ from app.models import *  # noqa: F401,F403
 from app.models.case import CaseTransitionAttachment
 from app.models.masters import Customer
 from app.models.user import Role, User, UserDivisionMap
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -93,6 +94,7 @@ def _submit_case(c: TestClient, h: dict[str, str]) -> int:
         },
     )
     case_id = r.json()["id"]
+    attach_default_signatory(c, h, case_id)
     r = c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     assert r.status_code == 200, r.text
     return case_id

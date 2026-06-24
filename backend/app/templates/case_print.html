@@ -154,6 +154,18 @@
   </table>
 </div>
 
+{# Phase 40: joint cheque signatories - inline list of partner
+   names + ID numbers immediately below the Customer block so the
+   legal team sees who actually signed the returned cheques. #}
+{% if case.cheque_signatories %}
+<div style="margin-top:8px;">
+  <strong>Cheque Signatories:</strong>
+  {% for p in case.cheque_signatories %}
+    {{ p.name }}{% if p.id_number %} <span style="color:#8a91a3">(ID# {{ p.id_number }})</span>{% endif %}{% if not loop.last %} . {% endif %}
+  {% endfor %}
+</div>
+{% endif %}
+
 <h2>Cheque Details</h2>
 {% if case.cheques %}
 <table class="cheques">

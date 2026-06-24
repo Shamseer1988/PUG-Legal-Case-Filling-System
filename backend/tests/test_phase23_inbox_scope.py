@@ -12,6 +12,7 @@ from app.main import app
 from app.models import *  # noqa: F401,F403
 from app.models.case import Case
 from app.models.user import Role, User, UserDivisionMap
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -127,6 +128,7 @@ def _setup_two_sales_managers_one_submitted_case(c: TestClient, SessionLocal) ->
             ],
         },
     ).json()["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     return "sm1@pug.local", "sm2@pug.local", sm1_id, case_id
 

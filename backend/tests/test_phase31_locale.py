@@ -11,6 +11,7 @@ from app.main import app
 from app.models import *  # noqa: F401,F403
 from app.models.notification import EmailLog
 from app.models.user import User
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -141,6 +142,7 @@ def test_notification_picks_arabic_template_for_ar_user(client) -> None:
             ],
         },
     ).json()["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
 
     db = SessionLocal()
@@ -194,6 +196,7 @@ def test_notification_uses_english_template_for_en_user(client) -> None:
             ],
         },
     ).json()["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
 
     db = SessionLocal()

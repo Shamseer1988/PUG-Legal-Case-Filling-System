@@ -13,6 +13,7 @@ from app.models.case import (
     CaseNoSequence,
     Cheque,
 )
+from app.models.masters import CustomerPartner
 from app.models.user import User
 from app.schemas.case import CaseCreate, CaseUpdate, ChequeCreate, ChequeUpdate
 
@@ -29,6 +30,41 @@ def next_case_no(db: Session, year: int | None = None) -> str:
     seq.last_number += 1
     db.flush()
     return f"{CASE_NO_PREFIX}-{year}-{seq.last_number:04d}"
+
+
+def _apply_cheque_signatories(
+    db: Session, case: Case, partner_ids: list[int] | None
+) -> None:
+    """Phase 40: replace the case -> partner join rows with the
+    payload-supplied ids.
+
+    Validation:
+      - duplicates are silently de-duped
+      - every id must reference an active CustomerPartner that
+        belongs to ``case.customer_id`` (otherwise we'd allow
+        cross-customer leakage)
+    """
+    if partner_ids is None:
+        return  # caller didn't touch the field
+    uniq = list(dict.fromkeys(int(x) for x in partner_ids))
+    if uniq:
+        rows = (
+            db.query(CustomerPartner)
+            .filter(CustomerPartner.id.in_(uniq))
+            .all()
+        )
+        found = {r.id: r for r in rows}
+        for pid in uniq:
+            if pid not in found:
+                raise ValueError(f"Unknown partner id: {pid}")
+            if found[pid].customer_id != case.customer_id:
+                raise ValueError(
+                    f"Partner {pid} does not belong to the case's customer"
+                )
+        case.cheque_signatories = [found[pid] for pid in uniq]
+    else:
+        case.cheque_signatories = []
+    db.flush()
 
 
 def _apply_cheques(db: Session, case: Case, payload: list[ChequeUpdate]) -> None:
@@ -74,7 +110,9 @@ def _apply_cheques(db: Session, case: Case, payload: list[ChequeUpdate]) -> None
 
 def create_case(db: Session, payload: CaseCreate, current_user: User) -> Case:
     case = Case(
-        **payload.model_dump(exclude={"cheques"}),
+        **payload.model_dump(
+            exclude={"cheques", "cheque_signatory_partner_ids"}
+        ),
         case_no=next_case_no(db),
         created_by_id=current_user.id,
         status=CASE_STATUS_DRAFT,
@@ -85,6 +123,9 @@ def create_case(db: Session, payload: CaseCreate, current_user: User) -> Case:
     if payload.cheques:
         for c in payload.cheques:
             case.cheques.append(Cheque(**c.model_dump()))
+    # Phase 40: link joint cheque signatories. Validation runs
+    # even at create-time so a malformed payload fails fast.
+    _apply_cheque_signatories(db, case, payload.cheque_signatory_partner_ids)
     db.commit()
     db.refresh(case)
     return case
@@ -126,10 +167,12 @@ def update_case(db: Session, case: Case, payload: CaseUpdate, user: User) -> Cas
         )
     data = payload.model_dump(exclude_unset=True)
     cheques = data.pop("cheques", None)
+    signatory_ids = data.pop("cheque_signatory_partner_ids", None)
     for k, v in data.items():
         setattr(case, k, v)
     if cheques is not None:
         _apply_cheques(db, case, [ChequeUpdate(**c) for c in cheques])
+    _apply_cheque_signatories(db, case, signatory_ids)
     db.commit()
     db.refresh(case)
     return case

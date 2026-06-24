@@ -405,6 +405,26 @@ def render_case_pdf(db: Session, case: Case) -> bytes:
     ]))
     elements.append(two_col)
 
+    # ==================== CHEQUE SIGNATORIES (Phase 40) ====================
+    # Joint-signing companies often have more than one authorised
+    # signatory on a returned cheque; we print every selected partner
+    # name + ID# so the legal team has the human face behind the
+    # signature on the same page as the case data.
+    if case.cheque_signatories:
+        sig_lines = []
+        for p in case.cheque_signatories:
+            label = p.name
+            if p.id_number:
+                label += f' <font color="#8a91a3">(ID# {p.id_number})</font>'
+            sig_lines.append(label)
+        sig_text = " &nbsp;.&nbsp; ".join(sig_lines)
+        elements.append(
+            Paragraph(
+                f'<b>Cheque Signatories:</b> {sig_text}',
+                st["body"],
+            )
+        )
+
     # ==================== CHEQUE DETAILS ====================
     elements.extend(_section_heading("CHEQUE DETAILS", st))
 

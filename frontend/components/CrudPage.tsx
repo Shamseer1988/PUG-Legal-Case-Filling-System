@@ -37,6 +37,9 @@ type Props = {
   columns: { key: string; label: string; render?: (v: unknown, row: Row) => React.ReactNode }[];
   emptyTemplate: Record<string, unknown>;
   canWrite?: boolean;
+  // Phase 40: optional per-row buttons rendered before Edit /
+  // Delete - used by Customers to launch the Partners sub-modal.
+  rowActions?: (row: Row) => React.ReactNode;
 };
 
 export function CrudPage({
@@ -46,6 +49,7 @@ export function CrudPage({
   columns,
   emptyTemplate,
   canWrite = true,
+  rowActions,
 }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
@@ -206,20 +210,25 @@ export function CrudPage({
                       {c.render ? c.render(r[c.key], r) : String(r[c.key] ?? '')}
                     </td>
                   ))}
-                  {canWrite && (
+                  {(canWrite || rowActions) && (
                     <td className="px-4 py-2 text-right">
-                      <button
-                        onClick={() => startEdit(r)}
-                        className="mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
-                      >
-                        <Pencil className="h-3 w-3" /> Edit
-                      </button>
-                      <button
-                        onClick={() => remove(r.id)}
-                        className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-rose-600 hover:bg-rose-500/10"
-                      >
-                        <Trash2 className="h-3 w-3" /> Delete
-                      </button>
+                      {rowActions?.(r)}
+                      {canWrite && (
+                        <>
+                          <button
+                            onClick={() => startEdit(r)}
+                            className="mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
+                          >
+                            <Pencil className="h-3 w-3" /> Edit
+                          </button>
+                          <button
+                            onClick={() => remove(r.id)}
+                            className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-rose-600 hover:bg-rose-500/10"
+                          >
+                            <Trash2 className="h-3 w-3" /> Delete
+                          </button>
+                        </>
+                      )}
                     </td>
                   )}
                 </tr>

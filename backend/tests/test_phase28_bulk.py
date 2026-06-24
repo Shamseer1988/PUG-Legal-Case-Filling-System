@@ -13,6 +13,7 @@ from app.main import app
 from app.models import *  # noqa: F401,F403
 from app.models.case import Case
 from app.models.user import Role, User, UserDivisionMap
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -123,6 +124,7 @@ def _submit_case(c: TestClient, h: dict[str, str], sm_id: int | None = None) -> 
     if sm_id:
         payload["sales_manager_id"] = sm_id
     case_id = c.post("/api/v1/cases", headers=h, json=payload).json()["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     return case_id, div_id
 

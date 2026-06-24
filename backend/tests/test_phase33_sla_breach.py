@@ -14,6 +14,7 @@ from app.models import *  # noqa: F401,F403
 from app.models.case import Case
 from app.models.notification import Notification
 from app.services import sla_service
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -104,6 +105,7 @@ def _make_submitted_case(c: TestClient, h: dict[str, str]) -> int:
         },
     ).json()
     case_id = case["id"]
+    attach_default_signatory(c, h, case)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     return case_id
 

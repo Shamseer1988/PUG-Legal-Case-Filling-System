@@ -9,6 +9,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models import *  # noqa: F401,F403
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -146,6 +147,8 @@ def test_kpis_total_legal_amount_excludes_drafts(client: TestClient) -> None:
 
     # Submit one -> only the submitted case contributes
     target = next(iter(cases.values()))
+    case = client.get(f"/api/v1/cases/{target}", headers=h).json()
+    attach_default_signatory(client, h, case)
     client.post(f"/api/v1/cases/{target}/submit", headers=h)
     kpis = client.get("/api/v1/dashboard/kpis", headers=h).json()
     assert kpis["total_legal_amount"] == "1500.00"

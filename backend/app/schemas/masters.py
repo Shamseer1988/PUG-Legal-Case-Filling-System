@@ -1,5 +1,7 @@
 """Master data schemas."""
 
+from datetime import date
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -115,6 +117,57 @@ class CustomerUpdate(BaseModel):
 class CustomerRead(CustomerBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+
+
+# ---------- Customer Partner (Phase 40) ----------
+_RESIDENCY_PATTERN = "^(inside_country|outside_country|visa_cancelled|unknown)$"
+
+
+class CustomerPartnerBase(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    id_number: str = ""
+    id_expiry_date: date | None = None
+    nationality: str = ""
+    residency_status: str = Field(default="unknown", pattern=_RESIDENCY_PATTERN)
+    is_cheque_signatory: bool = False
+    is_authorised_signatory: bool = False
+    is_admin_contact: bool = False
+    role_other: str = ""
+    phone: str = ""
+    email: str = ""
+    notes: str = ""
+    is_active: bool = True
+
+
+class CustomerPartnerCreate(CustomerPartnerBase):
+    pass
+
+
+class CustomerPartnerUpdate(BaseModel):
+    name: str | None = None
+    id_number: str | None = None
+    id_expiry_date: date | None = None
+    nationality: str | None = None
+    residency_status: str | None = Field(default=None, pattern=_RESIDENCY_PATTERN)
+    is_cheque_signatory: bool | None = None
+    is_authorised_signatory: bool | None = None
+    is_admin_contact: bool | None = None
+    role_other: str | None = None
+    phone: str | None = None
+    email: str | None = None
+    notes: str | None = None
+    is_active: bool | None = None
+
+
+class CustomerPartnerRead(CustomerPartnerBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    customer_id: int
+    # Surface the ID-document metadata so the UI can render a
+    # download/replace chip without a second round-trip.
+    id_document_filename: str = ""
+    id_document_mime: str = ""
+    id_document_size: int = 0
 
 
 # ---------- Lawyer ----------

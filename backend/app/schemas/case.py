@@ -121,6 +121,10 @@ class CaseBase(BaseModel):
 
 class CaseCreate(CaseBase):
     cheques: list[ChequeCreate] = []
+    # Phase 40: joint cheque signatories. Optional at draft time;
+    # workflow_service.submit refuses to advance the case when the
+    # list is empty.
+    cheque_signatory_partner_ids: list[int] = []
 
 
 class CaseUpdate(BaseModel):
@@ -144,6 +148,7 @@ class CaseUpdate(BaseModel):
     chairman_id: int | None = None
     lawyer_id: int | None = None
     cheques: list[ChequeUpdate] | None = None
+    cheque_signatory_partner_ids: list[int] | None = None
 
 
 class CaseListItem(BaseModel):
@@ -218,3 +223,6 @@ class CaseRead(CaseBase):
     updated_at: datetime
     cheques: list[ChequeRead] = []
     attachments: list[AttachmentRead] = []
+    # Phase 40: joint cheque signatories - list of CustomerPartner
+    # ids linked via the case_cheque_signatories join table.
+    cheque_signatory_partner_ids: list[int] = []
