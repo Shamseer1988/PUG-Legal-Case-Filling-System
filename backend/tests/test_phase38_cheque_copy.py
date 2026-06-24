@@ -17,6 +17,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models import *  # noqa: F401,F403
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -146,6 +147,8 @@ def test_submit_rejects_cases_with_empty_cheque_number(client) -> None:
         },
     )
     assert patch.status_code == 200, patch.text
+    # Phase 40: submit also requires at least one cheque signatory.
+    attach_default_signatory(c, h, case)
     sub = c.post(f"/api/v1/cases/{case['id']}/submit", headers=h)
     assert sub.status_code == 200, sub.text
 

@@ -18,8 +18,10 @@ from app.models.court import CashRequest, CourtFiling, Hearing
 from app.models.job_run import JobRun
 from app.models.masters import (
     Bank,
+    CaseChequeSignatory,
     CaseType,
     Customer,
+    CustomerPartner,
     Division,
     Lawyer,
     LawyerDivisionMap,
@@ -41,6 +43,8 @@ __all__ = [
     "Bank",
     "Salesman",
     "Customer",
+    "CustomerPartner",
+    "CaseChequeSignatory",
     "Lawyer",
     "LawyerDivisionMap",
     "CaseType",

@@ -145,6 +145,24 @@ class Case(Base, TimestampMixin):
         order_by="CaseAttachment.id",
         lazy="selectin",
     )
+    # Phase 40: joint cheque signatories - the operator picks one
+    # or more CustomerPartner rows that physically sign returned
+    # cheques. Submit() refuses to advance the case while this
+    # list is empty (joint-sign companies must declare at least
+    # one signatory).
+    cheque_signatories: Mapped[list["CustomerPartner"]] = relationship(
+        "CustomerPartner",
+        secondary="case_cheque_signatories",
+        lazy="selectin",
+    )
+
+    @property
+    def cheque_signatory_partner_ids(self) -> list[int]:
+        """Phase 40: surface the joint-signatory ids so the
+        Pydantic ``CaseRead`` schema can pull them via
+        ``from_attributes`` without a separate ORM->dict step."""
+        return [p.id for p in (self.cheque_signatories or [])]
+
     timeline: Mapped[list["CaseStatusUpdate"]] = relationship(
         back_populates="case",
         cascade="all, delete-orphan",

@@ -124,6 +124,14 @@ def submit(db: Session, case: Case, user: User) -> Case:
         raise WorkflowError(
             f"{len(missing)} cheque row(s) are missing a cheque number"
         )
+    # Phase 40: every submitted case must declare at least one
+    # cheque signatory partner. Joint-sign companies often have
+    # multiple - the form supports that - but zero is not allowed
+    # once the case leaves the Accountant's desk.
+    if not case.cheque_signatories:
+        raise WorkflowError(
+            "Pick at least one cheque signatory partner before submitting"
+        )
 
     from_status, from_stage = case.status, case.current_stage
     first = WORKFLOW_STAGES[0]

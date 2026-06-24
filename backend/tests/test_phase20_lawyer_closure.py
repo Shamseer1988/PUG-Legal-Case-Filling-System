@@ -19,6 +19,7 @@ from app.models.case import (
 )
 from app.models.user import Role, User, UserDivisionMap
 from app.services import workflow_service
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -97,6 +98,7 @@ def _make_filed_case(c: TestClient, h: dict[str, str], SessionLocal) -> int:
         },
     ).json()
     case_id = case["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     # Force the case into status=Filed at stage=Lawyer to focus the
     # test on the new transition rather than walking all 6 approval
@@ -172,6 +174,7 @@ def test_lawyer_approve_rejected_when_not_filed(client) -> None:
             ],
         },
     ).json()["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     r = c.post(
         f"/api/v1/cases/{case_id}/transition",

@@ -2,7 +2,8 @@
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -14,6 +15,7 @@ from app.models.masters import (
     Bank,
     CaseType,
     Customer,
+    CustomerPartner,
     Division,
     Lawyer,
     LawyerDivisionMap,
@@ -28,6 +30,9 @@ from app.schemas.masters import (
     CaseTypeRead,
     CaseTypeUpdate,
     CustomerCreate,
+    CustomerPartnerCreate,
+    CustomerPartnerRead,
+    CustomerPartnerUpdate,
     CustomerRead,
     CustomerUpdate,
     DivisionCreate,
@@ -40,7 +45,7 @@ from app.schemas.masters import (
     SalesmanRead,
     SalesmanUpdate,
 )
-from app.services import audit_service
+from app.services import audit_service, storage
 
 router = APIRouter(tags=["masters"])
 
@@ -319,3 +324,195 @@ _register(
     order_by=CaseType.code,
     unique_field="code",
 )
+
+
+# ---------- Customer partners (Phase 40) ----------
+def _scope_customer_or_404(
+    db: Session, user: User, customer_id: int
+) -> Customer:
+    """Look up the customer with the same division scoping the
+    customers list endpoint already enforces, so an Accountant
+    can't peek at another division's partners through this route.
+    """
+    cust = db.get(Customer, customer_id)
+    if not cust:
+        raise HTTPException(status_code=404, detail="Customer not found")
+    allowed = allowed_division_ids(user)
+    if allowed is not None:
+        if not allowed or cust.division_id not in allowed:
+            raise HTTPException(status_code=404, detail="Customer not found")
+    return cust
+
+
+@router.get(
+    "/customers/{customer_id}/partners",
+    response_model=list[CustomerPartnerRead],
+)
+def list_customer_partners(
+    customer_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(MASTERS_READ)),
+) -> list[CustomerPartnerRead]:
+    cust = _scope_customer_or_404(db, user, customer_id)
+    return [CustomerPartnerRead.model_validate(p) for p in cust.partners]
+
+
+@router.post(
+    "/customers/{customer_id}/partners",
+    response_model=CustomerPartnerRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_customer_partner(
+    customer_id: int,
+    payload: CustomerPartnerCreate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(MASTERS_WRITE)),
+) -> CustomerPartnerRead:
+    cust = _scope_customer_or_404(db, user, customer_id)
+    p = CustomerPartner(customer_id=cust.id, **payload.model_dump())
+    db.add(p)
+    db.flush()
+    audit_service.audit_create(
+        db,
+        "CustomerPartner",
+        p.id,
+        f"Added partner {p.name} to customer {cust.code}",
+        audit_service.snapshot(p),
+    )
+    db.commit()
+    db.refresh(p)
+    return CustomerPartnerRead.model_validate(p)
+
+
+@router.patch(
+    "/customers/{customer_id}/partners/{partner_id}",
+    response_model=CustomerPartnerRead,
+)
+def update_customer_partner(
+    customer_id: int,
+    partner_id: int,
+    payload: CustomerPartnerUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(MASTERS_WRITE)),
+) -> CustomerPartnerRead:
+    cust = _scope_customer_or_404(db, user, customer_id)
+    p = db.get(CustomerPartner, partner_id)
+    if not p or p.customer_id != cust.id:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    before = audit_service.snapshot(p)
+    for k, v in payload.model_dump(exclude_unset=True).items():
+        setattr(p, k, v)
+    db.flush()
+    audit_service.audit_update(
+        db, "CustomerPartner", p.id, f"Updated partner {p.name}", before,
+        audit_service.snapshot(p),
+    )
+    db.commit()
+    db.refresh(p)
+    return CustomerPartnerRead.model_validate(p)
+
+
+@router.delete(
+    "/customers/{customer_id}/partners/{partner_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_customer_partner(
+    customer_id: int,
+    partner_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(MASTERS_WRITE)),
+) -> None:
+    cust = _scope_customer_or_404(db, user, customer_id)
+    p = db.get(CustomerPartner, partner_id)
+    if not p or p.customer_id != cust.id:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    audit_service.audit_delete(
+        db, "CustomerPartner", p.id, f"Removed partner {p.name}",
+        audit_service.snapshot(p),
+    )
+    # Drop the ID document file on disk - the case_cheque_signatories
+    # rows cascade automatically via the FK.
+    if p.id_document_stored:
+        storage.delete_partner_id_document(p.id, p.id_document_stored)
+    db.delete(p)
+    db.commit()
+
+
+@router.post(
+    "/customers/{customer_id}/partners/{partner_id}/id-document",
+    response_model=CustomerPartnerRead,
+)
+def upload_partner_id_document(
+    customer_id: int,
+    partner_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(MASTERS_WRITE)),
+) -> CustomerPartnerRead:
+    cust = _scope_customer_or_404(db, user, customer_id)
+    p = db.get(CustomerPartner, partner_id)
+    if not p or p.customer_id != cust.id:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    # Drop the previous file (storage helper also does this, but
+    # being explicit makes the audit trail cleaner).
+    if p.id_document_stored:
+        storage.delete_partner_id_document(p.id, p.id_document_stored)
+    stored, size = storage.save_partner_id_document(p.id, file)
+    p.id_document_filename = file.filename or stored
+    p.id_document_stored = stored
+    p.id_document_mime = file.content_type or "application/octet-stream"
+    p.id_document_size = size
+    db.commit()
+    db.refresh(p)
+    return CustomerPartnerRead.model_validate(p)
+
+
+@router.get(
+    "/customers/{customer_id}/partners/{partner_id}/id-document",
+)
+def view_partner_id_document(
+    customer_id: int,
+    partner_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(MASTERS_READ)),
+) -> FileResponse:
+    cust = _scope_customer_or_404(db, user, customer_id)
+    p = db.get(CustomerPartner, partner_id)
+    if not p or p.customer_id != cust.id:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    if not p.id_document_stored:
+        raise HTTPException(status_code=404, detail="No ID document on file")
+    path = storage.get_partner_id_document_path(p.id, p.id_document_stored)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="File missing on disk")
+    return FileResponse(
+        path,
+        filename=p.id_document_filename,
+        media_type=p.id_document_mime or "application/octet-stream",
+        content_disposition_type="inline",
+    )
+
+
+@router.delete(
+    "/customers/{customer_id}/partners/{partner_id}/id-document",
+    response_model=CustomerPartnerRead,
+)
+def delete_partner_id_document(
+    customer_id: int,
+    partner_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(MASTERS_WRITE)),
+) -> CustomerPartnerRead:
+    cust = _scope_customer_or_404(db, user, customer_id)
+    p = db.get(CustomerPartner, partner_id)
+    if not p or p.customer_id != cust.id:
+        raise HTTPException(status_code=404, detail="Partner not found")
+    if p.id_document_stored:
+        storage.delete_partner_id_document(p.id, p.id_document_stored)
+    p.id_document_filename = ""
+    p.id_document_stored = ""
+    p.id_document_mime = ""
+    p.id_document_size = 0
+    db.commit()
+    db.refresh(p)
+    return CustomerPartnerRead.model_validate(p)

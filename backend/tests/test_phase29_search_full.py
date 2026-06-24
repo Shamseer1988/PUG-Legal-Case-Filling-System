@@ -9,6 +9,7 @@ from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
 from app.models import *  # noqa: F401,F403
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -131,6 +132,8 @@ def test_search_full_status_filter(client) -> None:
     h = _admin_h(client)
     drafted = _make_case(client, h, "DA", "Draft A")
     submitted = _make_case(client, h, "SB", "Submitted B")
+    case = client.get(f"/api/v1/cases/{submitted}", headers=h).json()
+    attach_default_signatory(client, h, case)
     client.post(f"/api/v1/cases/{submitted}/submit", headers=h)
 
     r = client.get("/api/v1/cases/search-full?status_in=Draft", headers=h).json()

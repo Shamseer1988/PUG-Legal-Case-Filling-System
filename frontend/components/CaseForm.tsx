@@ -52,6 +52,19 @@ type CaseDraft = {
   chairman_id: number | null;
   lawyer_id: number | null;
   cheques: ChequeDraft[];
+  // Phase 40: partner IDs to record as joint cheque signatories. At
+  // least one is required at submit time; the backend enforces the
+  // gate.
+  cheque_signatory_partner_ids: number[];
+};
+
+type PartnerOption = {
+  id: number;
+  name: string;
+  id_number: string;
+  is_cheque_signatory: boolean;
+  is_authorised_signatory: boolean;
+  is_active: boolean;
 };
 
 type CaseFull = {
@@ -102,6 +115,7 @@ const EMPTY_CASE: CaseDraft = {
   chairman_id: null,
   lawyer_id: null,
   cheques: [{ ...EMPTY_CHEQUE }],
+  cheque_signatory_partner_ids: [],
 };
 
 export function CaseForm({ caseId }: { caseId?: number }) {
@@ -127,6 +141,10 @@ export function CaseForm({ caseId }: { caseId?: number }) {
   const executiveDirectors = useUserOptions('Executive Director', divisionScope);
   const auditors = useUserOptions('Auditor', null);
   const chairmen = useUserOptions('Chairman / MD', null);
+  // Phase 40: candidate cheque signatories - partners flagged as
+  // cheque/authorised signatories on the selected customer. The
+  // submit gate requires at least one selection.
+  const partnerOptions = useCustomerPartners(draft.customer_id);
   const [meta, setMeta] = useState<CaseFull | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -210,6 +228,23 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       cancelled = true;
     };
   }, [draft.customer_id, locked]);
+
+  // Phase 40: drop any partner selections that no longer match the
+  // (newly-loaded) candidate set. Happens when the user changes the
+  // customer mid-edit - the old customer's partner IDs would otherwise
+  // remain selected but invisible, and the backend would reject them
+  // as cross-customer.
+  useEffect(() => {
+    if (locked) return;
+    setDraft((d) => {
+      if (d.cheque_signatory_partner_ids.length === 0) return d;
+      const valid = new Set(partnerOptions.map((p) => p.id));
+      const filtered = d.cheque_signatory_partner_ids.filter((id) => valid.has(id));
+      return filtered.length === d.cheque_signatory_partner_ids.length
+        ? d
+        : { ...d, cheque_signatory_partner_ids: filtered };
+    });
+  }, [locked, partnerOptions]);
 
   // Auto-pick signatories when there's exactly one candidate — common
   // for Auditor, Chairman / MD and small divisions where the user
@@ -536,6 +571,16 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             />
           </Field>
         </div>
+      </Card>
+
+      <Card title="Cheque Signatories">
+        <ChequeSignatoryPicker
+          customerId={draft.customer_id}
+          options={partnerOptions}
+          selected={draft.cheque_signatory_partner_ids}
+          onChange={(ids) => up('cheque_signatory_partner_ids', ids)}
+          disabled={locked}
+        />
       </Card>
 
       <Card title="Amounts">
@@ -868,6 +913,9 @@ function toDraft(c: CaseFull): CaseDraft {
             bounce_reason: ch.bounce_reason ?? '',
           }))
         : [{ ...EMPTY_CHEQUE }],
+    cheque_signatory_partner_ids: Array.isArray(c.cheque_signatory_partner_ids)
+      ? (c.cheque_signatory_partner_ids as number[])
+      : [],
   };
 }
 
@@ -895,6 +943,150 @@ function useUserOptions(
       )
       .catch(() => setOpts([]));
   }, [role, divisionId]);
+  return opts;
+}
+
+/** Phase 40: joint cheque signatory multi-select.
+ *
+ * Backed by ``GET /masters/customers/{id}/partners`` filtered to
+ * active cheque/authorised signatories. The user picks one or more
+ * partners by ticking checkboxes. The selected partner IDs flow into
+ * ``cheque_signatory_partner_ids`` on the case payload and the
+ * backend enforces non-empty on submit.
+ *
+ * Edge cases:
+ * - No customer picked → show a hint instead of an empty grid.
+ * - Customer has zero qualifying partners → render a deep-link to
+ *   the customer's Partners modal so the Accountant can fix it on
+ *   the spot.
+ */
+function ChequeSignatoryPicker({
+  customerId,
+  options,
+  selected,
+  onChange,
+  disabled,
+}: {
+  customerId: number | null;
+  options: PartnerOption[];
+  selected: number[];
+  onChange: (ids: number[]) => void;
+  disabled?: boolean;
+}) {
+  function toggle(id: number) {
+    if (disabled) return;
+    const next = selected.includes(id)
+      ? selected.filter((x) => x !== id)
+      : [...selected, id];
+    onChange(next);
+  }
+
+  if (!customerId) {
+    return (
+      <div className="text-xs text-[rgb(var(--color-muted))]">
+        Pick a customer first to see their cheque signatories.
+      </div>
+    );
+  }
+
+  if (options.length === 0) {
+    return (
+      <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+        This customer has no partners flagged as <em>Cheque Signatory</em> or{' '}
+        <em>Authorised Signatory</em>.{' '}
+        <Link
+          href={`/masters/customers`}
+          className="font-semibold underline hover:no-underline"
+        >
+          Open Customer master → Partners
+        </Link>{' '}
+        to add one. At least one is required before the case can be submitted.
+      </div>
+    );
+  }
+
+  // Stable display order: visible selections first (in pick order),
+  // then the remaining candidates alphabetically.
+  const byId = new Map(options.map((p) => [p.id, p]));
+  const ordered = [
+    ...selected.map((id) => byId.get(id)).filter((p): p is PartnerOption => !!p),
+    ...options
+      .filter((p) => !selected.includes(p.id))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+  ];
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {ordered.map((p) => {
+          const checked = selected.includes(p.id);
+          return (
+            <label
+              key={p.id}
+              className={`flex items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                checked
+                  ? 'border-pug-gold-500 bg-pug-gold-500/10'
+                  : 'border-[rgb(var(--color-border))]'
+              } ${disabled ? 'opacity-60' : 'cursor-pointer hover:bg-[rgb(var(--color-border))]/30'}`}
+            >
+              <input
+                type="checkbox"
+                checked={checked}
+                disabled={disabled}
+                onChange={() => toggle(p.id)}
+                className="mt-0.5 h-4 w-4"
+              />
+              <span className="flex flex-col">
+                <span className="font-medium">{p.name}</span>
+                {p.id_number && (
+                  <span className="text-[10px] text-[rgb(var(--color-muted))]">
+                    ID# {p.id_number}
+                  </span>
+                )}
+              </span>
+            </label>
+          );
+        })}
+      </div>
+      <div className="text-[10px] text-[rgb(var(--color-muted))]">
+        Tick every partner whose signature appears on the returned cheque
+        acknowledgement letter. Required before submit.
+      </div>
+    </div>
+  );
+}
+
+/** Phase 40: partners on the selected customer that can sign cheques.
+ *
+ * Filters to active partners flagged as cheque signatory OR authorised
+ * signatory - the two roles allowed to appear on the joint cheque-
+ * return acknowledgement letter. Returns an empty list (without
+ * touching the network) when no customer is selected yet.
+ */
+function useCustomerPartners(customerId: number | null): PartnerOption[] {
+  const [opts, setOpts] = useState<PartnerOption[]>([]);
+  useEffect(() => {
+    if (!customerId) {
+      setOpts([]);
+      return;
+    }
+    let cancelled = false;
+    api<PartnerOption[]>(`/api/v1/masters/customers/${customerId}/partners`)
+      .then((rows) => {
+        if (cancelled) return;
+        setOpts(
+          rows.filter(
+            (p) => p.is_active && (p.is_cheque_signatory || p.is_authorised_signatory),
+          ),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setOpts([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [customerId]);
   return opts;
 }
 

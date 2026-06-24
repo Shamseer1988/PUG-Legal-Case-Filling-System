@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models import *  # noqa: F401,F403
 from app.models.case import CASE_STATUS_APPROVED, Case, STAGE_LAWYER
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -90,6 +91,7 @@ def _make_approved_case_with_filing(c: TestClient, h: dict[str, str], SessionLoc
             ],
         },
     ).json()["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
 
     db = SessionLocal()
@@ -209,6 +211,7 @@ def test_upload_acknowledgement_rejected_without_filing(client) -> None:
             ],
         },
     ).json()["id"]
+    attach_default_signatory(c, h, case_id)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     db = SessionLocal()
     try:

@@ -12,6 +12,7 @@ from app.db.session import get_db
 from app.main import app
 from app.models import *  # noqa: F401,F403
 from app.models.user import User, UserDivisionMap
+from .conftest import attach_default_signatory
 from app.services.seed import DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, run_seed
 
 
@@ -240,6 +241,9 @@ def test_accountant_can_edit_after_submit_while_at_sales_manager(client) -> None
     case = _make_draft_case_as_accountant(c, acc_h, admin_for_seed=admin_h)
     case_id = case["id"]
 
+    # Phase 40: signatory partner is created with admin permissions
+    # (masters:write isn't on Accountant) then linked from acc_h.
+    attach_default_signatory(c, admin_h, case)
     sub = c.post(f"/api/v1/cases/{case_id}/submit", headers=acc_h)
     assert sub.status_code == 200, sub.text
     body = sub.json()
@@ -281,6 +285,7 @@ def test_attachment_upload_works_after_submit(client) -> None:
     h = _admin_h(c)
     case = _make_draft_case_as_accountant(c, h)
     case_id = case["id"]
+    attach_default_signatory(c, h, case)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     # Approve all the way through to Filed status? Actually just
     # uploading post-submit is enough to prove the gate doesn't bite.
@@ -305,6 +310,7 @@ def test_closure_round_trip_records_discount(client) -> None:
     case_id = case["id"]
 
     # Walk the case through to Approved so it becomes closable.
+    attach_default_signatory(c, h, case)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     for _ in range(6):  # 6 approval stages
         r = c.post(
@@ -348,6 +354,7 @@ def test_closure_discount_defaults_to_zero(client) -> None:
     h = _admin_h(c)
     case = _make_draft_case_as_accountant(c, h)
     case_id = case["id"]
+    attach_default_signatory(c, h, case)
     c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     for _ in range(6):
         c.post(

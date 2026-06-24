@@ -28,6 +28,7 @@ CASES_SUBDIR = "cases"
 SIGNATURES_SUBDIR = "signatures"
 TRANSITIONS_SUBDIR = "transitions"
 CHEQUES_SUBDIR = "cheques"
+PARTNERS_SUBDIR = "partners"
 
 # Image MIME -> file extension for signature uploads
 _SIG_MIME_EXT = {
@@ -283,5 +284,53 @@ def get_transition_attachment_path(case: Case, stored_filename: str) -> Path:
 
 def delete_transition_attachment(case: Case, stored_filename: str) -> None:
     p = get_transition_attachment_path(case, stored_filename)
+    if p.exists():
+        p.unlink()
+
+
+# ===================== Customer-partner ID documents (Phase 40) =====================
+def _partner_dir(partner_id: int) -> Path:
+    p = settings.storage_path / PARTNERS_SUBDIR / str(partner_id)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def save_partner_id_document(
+    partner_id: int, upload: UploadFile
+) -> tuple[str, int]:
+    """Replace any prior ID copy with the new upload.
+
+    Returns ``(stored_filename, size_bytes)``. The model row stores
+    ``stored_filename`` as a plain name (no path) and looks the
+    file back up via ``get_partner_id_document_path``.
+    """
+    original = upload.filename or "id"
+    ext = Path(original).suffix
+    # Wipe any previous ID copy for this partner so we don't
+    # accumulate orphans when the operator re-uploads.
+    for old in _partner_dir(partner_id).iterdir():
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    stored = f"{uuid.uuid4().hex}{ext}"
+    target = _partner_dir(partner_id) / stored
+    size = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            out.write(chunk)
+    return stored, size
+
+
+def get_partner_id_document_path(partner_id: int, stored_filename: str) -> Path:
+    return _partner_dir(partner_id) / stored_filename
+
+
+def delete_partner_id_document(partner_id: int, stored_filename: str) -> None:
+    p = get_partner_id_document_path(partner_id, stored_filename)
     if p.exists():
         p.unlink()
