@@ -27,17 +27,18 @@ _PERM = "masters:create_own_division"
 
 def upgrade() -> None:
     # Append the new permission to the Accountant system role only when it
-    # is not already present.  The ::jsonb cast lets us use the array-contains
-    # operator (@>) and the concatenation operator (||) without installing any
-    # extensions — both ship with stock PostgreSQL.
+    # is not already present. The bind parameters are sent as VARCHAR by the
+    # driver, so we cast them to ``jsonb`` explicitly inside the SQL — both
+    # the ``@>`` (contains) and ``||`` (concat) operators require jsonb on
+    # both sides. No PostgreSQL extensions needed.
     op.execute(
         sa.text(
             """
             UPDATE roles
-            SET permissions = (permissions::jsonb || :perm_arr)
+            SET permissions = (permissions::jsonb || (:perm_arr)::jsonb)
             WHERE name = 'Accountant'
               AND is_system = true
-              AND NOT (permissions::jsonb @> :perm_single)
+              AND NOT (permissions::jsonb @> (:perm_single)::jsonb)
             """
         ).bindparams(
             perm_arr=f'["{_PERM}"]',
