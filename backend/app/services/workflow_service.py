@@ -2,6 +2,7 @@
 
 from datetime import datetime, timedelta, timezone
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import allowed_division_ids
@@ -11,6 +12,7 @@ from app.core.workflow import (
     WORKFLOW_STAGES,
     StageConfig,
     get_stage,
+    stage_index,
 )
 from app.models.case import (
     ACTION_APPROVE,
@@ -259,7 +261,13 @@ def reject(db: Session, case: Case, user: User, comment: str) -> Case:
     return case
 
 
-def request_clarification(db: Session, case: Case, user: User, comment: str) -> Case:
+def request_clarification(
+    db: Session,
+    case: Case,
+    user: User,
+    comment: str,
+    clarify_from_stage: str | None = None,
+) -> Case:
     cfg = get_stage(case.current_stage)
     if not cfg:
         raise WorkflowError(
@@ -267,9 +275,24 @@ def request_clarification(db: Session, case: Case, user: User, comment: str) -> 
         )
     if not comment.strip():
         raise WorkflowError("A question is required when requesting clarification")
+
+    # Determine which stage to direct the clarification at.
+    target = clarify_from_stage or STAGE_ACCOUNTANT
+
+    # Non-Accountant targets must be strictly below the current stage.
+    if target != STAGE_ACCOUNTANT:
+        target_cfg = get_stage(target)
+        if not target_cfg:
+            raise WorkflowError(f"Unknown clarification target stage: '{target}'")
+        if stage_index(target) >= stage_index(case.current_stage):
+            raise WorkflowError(
+                "Clarification can only be directed at a stage below the current one"
+            )
+
     from_status, from_stage = case.status, case.current_stage
     case.status = CASE_STATUS_CLARIFICATION
-    _set_stage(case, STAGE_ACCOUNTANT, None)
+    case.clarify_from_stage = target
+    _set_stage(case, target, None)
     _log(
         db,
         case,
@@ -320,6 +343,7 @@ def resubmit(db: Session, case: Case, user: User, comment: str) -> Case:
         cfg = WORKFLOW_STAGES[0]
     from_status, from_stage = case.status, case.current_stage
     case.status = CASE_STATUS_IN_REVIEW
+    case.clarify_from_stage = None
     _set_stage(case, target_stage, cfg)
     _log(
         db,
@@ -409,25 +433,40 @@ def can_act(user: User, case: Case) -> bool:
     if user.is_super:
         return True
     perms = user.role.permissions if user.role else []
-    cfg = get_stage(case.current_stage)
     allowed = allowed_division_ids(user)
     user_div_ids = set(allowed) if allowed is not None else None  # None = all
-    if not cfg:
-        # Accountant clarification: any user with cases:create on their own case
-        if case.current_stage == STAGE_ACCOUNTANT and case.status == CASE_STATUS_CLARIFICATION:
+
+    # Clarification cases: route to whoever the clarification is aimed at.
+    if case.status == CASE_STATUS_CLARIFICATION:
+        target = case.clarify_from_stage or STAGE_ACCOUNTANT
+        if target == STAGE_ACCOUNTANT:
+            # Case creator (accountant) answers
             return has_permission(perms, "cases:create") and (
                 case.created_by_id == user.id
                 or user_div_ids is None
                 or case.division_id in user_div_ids
             )
-        # Lawyer stage with status=Filed: an explicit lawyer-approve
-        # action becomes available to anyone with cases:approve:lawyer.
-        if case.current_stage == STAGE_LAWYER and case.status == CASE_STATUS_FILED:
-            return has_permission(perms, "cases:approve:lawyer")
+        # Clarification directed at an approval-stage user
+        target_cfg = get_stage(target)
+        if not target_cfg:
+            return False
+        if not has_permission(perms, target_cfg.permission):
+            return False
+        if user_div_ids is not None and user_div_ids:
+            if case.division_id not in user_div_ids:
+                return False
+        return True
+
+    # Lawyer stage with status=Filed: explicit lawyer-approve action.
+    if case.current_stage == STAGE_LAWYER and case.status == CASE_STATUS_FILED:
+        return has_permission(perms, "cases:approve:lawyer")
+
+    # Standard approval stage check.
+    cfg = get_stage(case.current_stage)
+    if not cfg:
         return False
     if not has_permission(perms, cfg.permission):
         return False
-    # If user has division scope and case is outside it, deny.
     if user_div_ids is not None and user_div_ids:
         if case.division_id not in user_div_ids:
             return False
@@ -467,11 +506,26 @@ def inbox_for(db: Session, user: User) -> list[Case]:
             sub_q = sub_q.filter(Case.division_id.in_(allowed))
         rows.extend(sub_q.all())
 
-    # Clarifications come back to the Accountant who created them (or anyone in their division)
+        # Clarifications directed at one of this user's approval stages
+        clar_approval_q = q.filter(
+            Case.status == CASE_STATUS_CLARIFICATION,
+            Case.clarify_from_stage.in_(actionable_stages),
+        )
+        if allowed is not None and allowed:
+            clar_approval_q = clar_approval_q.filter(Case.division_id.in_(allowed))
+        rows.extend(clar_approval_q.all())
+
+    # Clarifications directed at Accountant (clarify_from_stage is NULL or "Accountant")
     if has_permission(perms, "cases:create"):
-        clar_q = q.filter(Case.status == CASE_STATUS_CLARIFICATION)
+        clar_q = q.filter(
+            Case.status == CASE_STATUS_CLARIFICATION,
+            or_(
+                Case.clarify_from_stage == STAGE_ACCOUNTANT,
+                Case.clarify_from_stage.is_(None),
+            ),
+        )
         if allowed is None:
-            pass  # cross-division - see every clarification
+            pass  # cross-division - see every Accountant-directed clarification
         elif allowed:
             clar_q = clar_q.filter(Case.division_id.in_(allowed))
         else:

@@ -13,6 +13,10 @@ class TransitionRequest(BaseModel):
     # IDs of pre-uploaded CaseTransitionAttachment rows to bind into
     # the new CaseStatusUpdate row created by this transition.
     attachment_ids: list[int] = Field(default_factory=list)
+    # Phase 46: which stage to direct the clarification at.
+    # Only used when action == "request_clarification".
+    # Defaults to "Accountant" when omitted.
+    clarify_from_stage: str | None = None
 
 
 class TransitionAttachmentRead(BaseModel):

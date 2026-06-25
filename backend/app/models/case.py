@@ -126,6 +126,10 @@ class Case(Base, TimestampMixin):
     sla_breach_notified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Phase 46: when clarification is requested from a stage other
+    # than Accountant, this records which stage should answer.
+    # NULL / "Accountant" means the default case-creator flow.
+    clarify_from_stage: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     # Authorship
     created_by_id: Mapped[int] = mapped_column(

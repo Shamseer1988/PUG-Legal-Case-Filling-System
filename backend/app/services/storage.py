@@ -384,3 +384,44 @@ def delete_custody_signature(log_id: int, stored_filename: str) -> None:
     p = get_custody_signature_path(log_id, stored_filename)
     if p.exists():
         p.unlink()
+
+
+# ===================== Custody acceptance acknowledgments (Phase 45) =====================
+def _custody_ack_dir(log_id: int) -> Path:
+    p = settings.storage_path / CUSTODY_SUBDIR / str(log_id) / "ack"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def save_custody_acknowledgment(log_id: int, upload: UploadFile) -> tuple[str, int]:
+    """Save a signed acknowledgment uploaded by the transfer recipient."""
+    original = upload.filename or "ack"
+    ext = Path(original).suffix
+    if not ext:
+        ext = _SIG_MIME_EXT.get((upload.content_type or "").lower(), ".png")
+    for old in _custody_ack_dir(log_id).iterdir():
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    stored = f"{uuid.uuid4().hex}{ext}"
+    target = _custody_ack_dir(log_id) / stored
+    size = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            out.write(chunk)
+    return stored, size
+
+
+def get_custody_acknowledgment_path(log_id: int, stored_filename: str) -> Path:
+    return _custody_ack_dir(log_id) / stored_filename
+
+
+def delete_custody_acknowledgment(log_id: int, stored_filename: str) -> None:
+    p = get_custody_acknowledgment_path(log_id, stored_filename)
+    if p.exists():
+        p.unlink()

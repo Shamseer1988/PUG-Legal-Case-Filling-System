@@ -1,7 +1,7 @@
 'use client';
 
 import { Check, X, AlertTriangle, Gavel, Paperclip, Send, Upload, Trash2 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 import {
@@ -13,43 +13,77 @@ import {
 
 type Action = 'approve' | 'reject' | 'request_clarification' | 'resubmit' | 'lawyer_approve';
 
+// Full approval stage order (matches the backend WORKFLOW_STAGES list).
+const APPROVAL_STAGE_ORDER = [
+  'Sales Manager',
+  'Division Manager',
+  'Audit',
+  'Finance Manager',
+  'Executive Director',
+  'Chairman / MD',
+];
+
+// Permission required to answer a clarification directed at each stage.
+const CLARIFY_STAGE_PERM: Record<string, string> = {
+  Accountant: ACTION.CASE_CREATE,
+  'Sales Manager': ACTION.CASE_APPROVE_SALES_MGR,
+  'Division Manager': ACTION.CASE_APPROVE_DIV_MGR,
+  Audit: ACTION.CASE_APPROVE_AUDIT,
+  'Finance Manager': ACTION.CASE_APPROVE_FM,
+  'Executive Director': ACTION.CASE_APPROVE_ED,
+  'Chairman / MD': ACTION.CASE_APPROVE_FINAL,
+};
+
 type Props = {
   caseId: number;
   status: string;
   currentStage: string;
+  /** From case.clarify_from_stage — which stage was asked for clarification. */
+  clarifyFromStage: string | null;
   /** Re-fetch the case after a successful transition. */
   onDone: () => void;
 };
 
-export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
+export function CaseActions({
+  caseId,
+  status,
+  currentStage,
+  clarifyFromStage,
+  onDone,
+}: Props) {
   const [open, setOpen] = useState<Action | null>(null);
   const [comment, setComment] = useState('');
+  const [clarifyTarget, setClarifyTarget] = useState('Accountant');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<TransitionAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const caps = useCapabilitiesStore((s) => s.caps);
-  const isApprovalStage = ![
-    'Accountant',
-    'Lawyer',
-    'Closed',
-  ].includes(currentStage);
+  const isApprovalStage = !['Accountant', 'Lawyer', 'Closed'].includes(currentStage);
   const isClarifyState = status === 'Clarification Requested';
-  // Lawyer Approval is only offered once the Lawyer has filed the
-  // case (status=Filed at stage=Lawyer) and the user has the
-  // dedicated capability.
+
+  // Reset clarify target when the modal opens.
+  useEffect(() => {
+    if (open === 'request_clarification') {
+      setClarifyTarget('Accountant');
+    }
+  }, [open]);
+
+  // Stages the current approver can direct a clarification at:
+  // all stages below the current one (by index) + always Accountant.
+  const currentIdx = APPROVAL_STAGE_ORDER.indexOf(currentStage);
+  const clarifyTargets = [
+    { stage: 'Accountant', label: 'Accountant (Case Creator)' },
+    ...APPROVAL_STAGE_ORDER.slice(0, currentIdx).map((s) => ({ stage: s, label: s })),
+  ];
+
+  // Lawyer Approval is only offered once the case is Filed at Lawyer stage.
   const showLawyerApprove =
     currentStage === 'Lawyer' &&
     status === 'Filed' &&
     canDoAction(caps, ACTION.CASE_LAWYER_APPROVE);
-  // Phase 38 fix: every approval stage carries its own capability.
-  // Without this check the frontend shows Approve/Reject/Clarify
-  // to *every* user once a case is submitted - including the
-  // Accountant who's not authorised at that stage. The backend
-  // already rejected such attempts with 403 "Not authorised to
-  // act at stage X"; this just stops surfacing the buttons in
-  // the first place.
+
   const STAGE_ACTION: Record<string, string> = {
     'Sales Manager': ACTION.CASE_APPROVE_SALES_MGR,
     'Division Manager': ACTION.CASE_APPROVE_DIV_MGR,
@@ -58,11 +92,18 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
     'Executive Director': ACTION.CASE_APPROVE_ED,
     'Chairman / MD': ACTION.CASE_APPROVE_FINAL,
   };
+
+  // Approve / Reject / Request Clarification only shown at approval stages
+  // when NOT in clarification state (prevents double-action during pendingclarification).
   const canApproveCurrentStage =
-    isApprovalStage && canDoAction(caps, STAGE_ACTION[currentStage] ?? '');
-  // Resubmit goes back to the Accountant - gated on case-create
-  // since that's the role permission for owning a draft.
-  const canResubmit = isClarifyState && canDoAction(caps, ACTION.CASE_CREATE);
+    isApprovalStage && !isClarifyState && canDoAction(caps, STAGE_ACTION[currentStage] ?? '');
+
+  // Resubmit is available when the clarification is directed at the current user's role.
+  const effectiveClarifyStage = clarifyFromStage || 'Accountant';
+  const canResubmit =
+    isClarifyState &&
+    canDoAction(caps, CLARIFY_STAGE_PERM[effectiveClarifyStage] ?? ACTION.CASE_CREATE);
+
   const isFinal = status === 'Rejected' || status === 'Closed';
 
   if (isFinal) {
@@ -101,14 +142,13 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
   }
 
   function cancel() {
-    // Best-effort cleanup of any uploaded-but-unused files so we
-    // don't litter the storage dir when the user backs out.
     pending.forEach((a) => {
       void deletePendingTransitionAttachment(caseId, a.id).catch(() => undefined);
     });
     setPending([]);
     setOpen(null);
     setComment('');
+    setClarifyTarget('Accountant');
     setErr(null);
   }
 
@@ -122,10 +162,12 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
           action: a,
           comment,
           attachment_ids: pending.map((p) => p.id),
+          ...(a === 'request_clarification' ? { clarify_from_stage: clarifyTarget } : {}),
         },
       });
       setOpen(null);
       setComment('');
+      setClarifyTarget('Accountant');
       setPending([]);
       onDone();
     } catch (e) {
@@ -169,7 +211,7 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
           )}
           {canResubmit && (
             <Btn variant="green" onClick={() => setOpen('resubmit')}>
-              <Send className="h-4 w-4" /> Resubmit
+              <Send className="h-4 w-4" /> Answer &amp; Resubmit
             </Btn>
           )}
           {showLawyerApprove && (
@@ -179,10 +221,10 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
           )}
           {!canApproveCurrentStage && !canResubmit && !showLawyerApprove && (
             <div className="text-xs text-[rgb(var(--color-muted))]">
-              {isApprovalStage
-                ? `Awaiting ${currentStage} action. You are not authorised to act at this stage.`
-                : isClarifyState
-                  ? 'Awaiting clarification from the case owner.'
+              {isClarifyState
+                ? `Awaiting clarification from ${effectiveClarifyStage}.`
+                : isApprovalStage
+                  ? `Awaiting ${currentStage} action. You are not authorised to act at this stage.`
                   : 'No approval action available at this stage.'}
             </div>
           )}
@@ -191,6 +233,26 @@ export function CaseActions({ caseId, status, currentStage, onDone }: Props) {
 
       {open && (
         <div className="space-y-3">
+          {/* Clarification target picker */}
+          {open === 'request_clarification' && clarifyTargets.length > 1 && (
+            <label className="block text-sm">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+                Request clarification from
+              </span>
+              <select
+                value={clarifyTarget}
+                onChange={(e) => setClarifyTarget(e.target.value)}
+                className="w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm focus:border-pug-gold-500 focus:outline-none"
+              >
+                {clarifyTargets.map((t) => (
+                  <option key={t.stage} value={t.stage}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
           <label className="block text-sm">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
               {open === 'approve'
@@ -288,7 +350,7 @@ function labelFor(a: Action): string {
     case 'reject':
       return 'Rejection';
     case 'request_clarification':
-      return 'Clarification';
+      return 'Clarification Request';
     case 'resubmit':
       return 'Resubmit';
     case 'lawyer_approve':

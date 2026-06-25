@@ -192,16 +192,31 @@ def on_case_rejected(db: Session, case: Case, actor: User, comment: str) -> None
 def on_case_clarification_requested(
     db: Session, case: Case, actor: User, comment: str
 ) -> None:
-    target = case.created_by_id
+    from app.core.workflow import get_stage
+    from app.models.case import STAGE_ACCOUNTANT
+
+    target_stage = case.clarify_from_stage or STAGE_ACCOUNTANT
+    if target_stage == STAGE_ACCOUNTANT:
+        target_user_id = case.created_by_id
+    else:
+        cfg = get_stage(target_stage)
+        if cfg and cfg.user_field:
+            target_user_id = getattr(case, cfg.user_field, None) or case.created_by_id
+        else:
+            target_user_id = case.created_by_id
+
     _emit(
         db,
-        user_id=target,
+        user_id=target_user_id,
         title=f"Clarification requested: {case.case_no}",
         body=f"{actor.full_name} asks: {comment}",
         link=_case_url(case.id),
         event="case.clarification_requested",
         related_case_id=case.id,
-        lines=[f"{actor.full_name} requested clarification:", comment],
+        lines=[
+            f"{actor.full_name} requested clarification from {target_stage}:",
+            comment,
+        ],
         facts=_case_facts(case),
     )
 

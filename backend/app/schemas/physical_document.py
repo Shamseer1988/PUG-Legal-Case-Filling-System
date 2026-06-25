@@ -25,6 +25,13 @@ class CustodyLogRead(BaseModel):
     signature_mime: str = ""
     signature_size: int = 0
 
+    # Phase 45 acceptance flow.
+    transfer_status: str = "accepted"
+    accepted_at: datetime | None = None
+    ack_filename: str = ""
+    ack_mime: str = ""
+    ack_size: int = 0
+
     # Pre-resolved display names so the timeline renders without
     # per-row user / location lookups on the frontend.
     from_user_name: str = ""
@@ -74,6 +81,11 @@ class PhysicalDocumentRead(PhysicalDocumentBase):
     current_location_name: str = ""
     case_no: str = ""
 
+    # Phase 45: pending transfer info (None when no transfer is pending).
+    pending_transfer_log_id: int | None = None
+    pending_transfer_to_user_id: int | None = None
+    pending_transfer_to_name: str = ""
+
 
 class PhysicalDocumentDetail(PhysicalDocumentRead):
     custody_log: list[CustodyLogRead] = Field(default_factory=list)
@@ -97,6 +109,19 @@ class TransferRequest(BaseModel):
     # Optional retroactive timestamp so an Admin can back-date a
     # handover that happened before the system was switched on.
     transferred_at: datetime | None = None
+
+
+# ---------- Transfer acceptance ----------
+class TransferActionRequest(BaseModel):
+    """Body for accept / reject actions (note is optional)."""
+    note: str = ""
+
+
+class PendingIncomingRead(CustodyLogRead):
+    """CustodyLogRead enriched with document and case context."""
+    document_label: str = ""
+    case_id: int | None = None
+    case_no: str = ""
 
 
 # ---------- Reports ----------
