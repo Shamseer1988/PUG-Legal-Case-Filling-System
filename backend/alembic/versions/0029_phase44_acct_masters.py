@@ -7,9 +7,15 @@ without gaining full ``masters:write`` access.
 No schema changes — this is a pure data migration that updates the JSON
 permissions array in the ``roles`` table.
 
-Revision ID: 0029_phase44_accountant_masters_create
+Revision ID: 0029_phase44_acct_masters
 Revises: 0028_phase42_pgdump_backup
 Create Date: 2026-06-25
+
+Note: revision id is intentionally short. Some deployed databases were
+created before alembic_version was widened to VARCHAR(64) (see env.py)
+and still carry the default VARCHAR(32) cap. A longer descriptive id
+would migrate fine but fail on the version-row update with
+``StringDataRightTruncation``, rolling the whole batch back.
 """
 
 from collections.abc import Sequence
@@ -17,7 +23,7 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0029_phase44_accountant_masters_create"
+revision: str = "0029_phase44_acct_masters"
 down_revision: str | None = "0028_phase42_pgdump_backup"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
