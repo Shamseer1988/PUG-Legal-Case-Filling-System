@@ -169,7 +169,9 @@ export function CaseCombobox({ value, onChange, placeholder, className }: Props)
       )}
 
       {open && (
-        <div className="rounded-md border border-pug-gold-500/60 bg-[rgb(var(--color-card))] shadow-lg">
+        <div
+          className="absolute left-0 top-0 z-30 w-[min(900px,calc(100vw-2rem))] rounded-md border border-pug-gold-500/60 bg-[rgb(var(--color-card))] shadow-lg"
+        >
           <div className="flex items-center gap-2 border-b border-[rgb(var(--color-border))] px-3 py-2">
             <Search className="h-4 w-4 text-[rgb(var(--color-muted))]" />
             <input
@@ -190,7 +192,7 @@ export function CaseCombobox({ value, onChange, placeholder, className }: Props)
             </button>
           </div>
 
-          <div className="max-h-72 overflow-auto">
+          <div className="max-h-[28rem] overflow-auto">
             {loading && (
               <div className="px-3 py-2 text-xs text-[rgb(var(--color-muted))]">
                 Searching...
@@ -202,14 +204,14 @@ export function CaseCombobox({ value, onChange, placeholder, className }: Props)
               </div>
             )}
             {!loading && rows.length > 0 && (
-              <table className="w-full text-xs">
+              <table className="w-full table-auto text-xs">
                 <thead className="sticky top-0 bg-[rgb(var(--color-border))]/30 text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
                   <tr>
-                    <th className="px-3 py-1.5 text-left">Case No.</th>
-                    <th className="px-3 py-1.5 text-left">Customer</th>
-                    <th className="px-3 py-1.5 text-left">Division</th>
-                    <th className="px-3 py-1.5 text-right">Amount</th>
-                    <th className="px-3 py-1.5 text-left">Status</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">Case No.</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">Customer</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">Division</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-right">Amount</th>
+                    <th className="whitespace-nowrap px-3 py-2 text-left">Status</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -224,16 +226,16 @@ export function CaseCombobox({ value, onChange, placeholder, className }: Props)
                           : 'hover:bg-[rgb(var(--color-border))]/30'
                       }`}
                     >
-                      <td className="px-3 py-1.5 font-mono">{r.case_no}</td>
-                      <td className="px-3 py-1.5">{r.customer_name || '-'}</td>
-                      <td className="px-3 py-1.5">{r.division_name || '-'}</td>
-                      <td className="px-3 py-1.5 text-right tabular-nums">
+                      <td className="whitespace-nowrap px-3 py-2 font-mono">{r.case_no}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.customer_name || '-'}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.division_name || '-'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
                         {Number(r.legal_filing_amount).toLocaleString(undefined, {
                           minimumFractionDigits: 2,
                           maximumFractionDigits: 2,
                         })}
                       </td>
-                      <td className="px-3 py-1.5">{r.status}</td>
+                      <td className="whitespace-nowrap px-3 py-2">{r.status}</td>
                     </tr>
                   ))}
                 </tbody>

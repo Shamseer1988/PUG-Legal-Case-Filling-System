@@ -111,40 +111,11 @@ def render_case_print(db: Session, case: Case) -> str:
         "bank_by_id": bank_by_id,
     }
 
-    # Phase 41: pre-resolve the physical documents into plain dicts
-    # so the Jinja template can render the chain-of-custody without
-    # touching ORM relationships.
-    from app.models.physical_document import PhysicalDocument
-
-    phys_rows = (
-        db.query(PhysicalDocument)
-        .filter(PhysicalDocument.case_id == case.id)
-        .order_by(PhysicalDocument.id.asc())
-        .all()
-    )
-    physical_docs = [
-        {
-            "label": d.label,
-            "kind": d.kind,
-            "holder_name": _user_name(db, d.current_holder_user_id),
-            "location_name": (
-                d.current_location.name if d.current_location else d.current_location_text
-            ),
-            "last_move": (
-                d.last_transferred_at.strftime("%Y-%m-%d")
-                if d.last_transferred_at
-                else ""
-            ),
-        }
-        for d in phys_rows
-    ]
-
     tmpl = env().get_template("case_print.html")
     return tmpl.render(
         case=case,
         refs=refs,
         signatory_grid=signatory_grid,
-        physical_docs=physical_docs,
         now=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
     )
 
@@ -569,53 +540,6 @@ def render_case_pdf(db: Session, case: Case) -> bytes:
         elements.append(
             Paragraph("<i>No attachments uploaded.</i>", st["small_muted"])
         )
-
-    # ==================== PHYSICAL FILES CHAIN OF CUSTODY (Phase 41) ====================
-    # Append a concise audit trail of every physical document
-    # registered against this case + where each one is right now.
-    # Lawyers / auditors reading the printed form get the same view
-    # of who's currently holding what.
-    from app.models.physical_document import PhysicalDocument
-
-    docs = (
-        db.query(PhysicalDocument)
-        .filter(PhysicalDocument.case_id == case.id)
-        .order_by(PhysicalDocument.id.asc())
-        .all()
-    )
-    if docs:
-        elements.extend(_section_heading("PHYSICAL FILES", st))
-        rows: list[list[Any]] = [[
-            Paragraph("#", st["th"]),
-            Paragraph("Document", st["th"]),
-            Paragraph("Kind", st["th"]),
-            Paragraph("Currently with", st["th"]),
-            Paragraph("Location", st["th"]),
-            Paragraph("Last move", st["th"]),
-        ]]
-        for idx, d in enumerate(docs, 1):
-            holder = _user_name(db, d.current_holder_user_id)
-            loc = d.current_location.name if d.current_location else d.current_location_text
-            last = d.last_transferred_at.strftime("%Y-%m-%d") if d.last_transferred_at else "-"
-            rows.append([
-                Paragraph(str(idx), st["td"]),
-                Paragraph(d.label or "-", st["td"]),
-                Paragraph(d.kind or "-", st["td"]),
-                Paragraph(holder or ("(in storage)" if loc else "-"), st["td"]),
-                Paragraph(loc or "-", st["td"]),
-                Paragraph(last, st["td"]),
-            ])
-        files_table = Table(
-            rows,
-            colWidths=[10 * mm, doc.width * 0.27, doc.width * 0.15, doc.width * 0.18, doc.width * 0.20, doc.width * 0.15],
-        )
-        files_table.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), LIGHT),
-            ("GRID", (0, 0), (-1, -1), 0.5, BORDER),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ]))
-        elements.append(files_table)
 
     # ==================== SIGNATORIES ====================
     elements.extend(_section_heading("SIGNATORIES", st))

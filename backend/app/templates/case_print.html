@@ -219,38 +219,6 @@
 <div style="color:#8a91a3;font-style:italic">No attachments uploaded.</div>
 {% endif %}
 
-{# Phase 41: physical-file chain of custody. Rendered only when
-   the case has registered physical documents. ``physical_docs`` is
-   a pre-resolved list-of-dicts from render.py so this template
-   stays free of ORM access. #}
-{% if physical_docs %}
-<h2>Physical Files</h2>
-<table class="cheques">
-  <thead>
-    <tr>
-      <th>#</th>
-      <th>Document</th>
-      <th>Kind</th>
-      <th>Currently with</th>
-      <th>Location</th>
-      <th>Last move</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for d in physical_docs %}
-    <tr>
-      <td>{{ loop.index }}</td>
-      <td>{{ d.label }}</td>
-      <td>{{ d.kind }}</td>
-      <td>{{ d.holder_name or ("(in storage)" if d.location_name else "-") }}</td>
-      <td>{{ d.location_name or "-" }}</td>
-      <td>{{ d.last_move or "-" }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
-{% endif %}
-
 <div class="signatories">
   {% for sig in signatory_grid %}
   <div class="box">

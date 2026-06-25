@@ -489,38 +489,48 @@ def test_transfer_requires_transfer_permission(client) -> None:
         json={"label": "Locked"},
     ).json()
 
-    # Sales Manager has documents:read but NOT documents:transfer.
-    # Map them to the case's division so the scope check passes and
-    # we're actually exercising the permission gate, not data scope.
-    role = next(r for r in c.get("/api/v1/roles", headers=h_admin).json() if r["name"] == "Sales Manager")
-    sm = c.post(
+    # Build a custom role with read-only access — no documents:transfer.
+    # (System roles in the approval chain now all carry transfer perms
+    # because Case Folder hops up the chain in person; we need a fresh
+    # role to exercise the permission gate.)
+    role = c.post(
+        "/api/v1/roles",
+        headers=h_admin,
+        json={
+            "name": "Read Only Tester",
+            "permissions": ["cases:read", "documents:read"],
+        },
+    ).json()
+    ro = c.post(
         "/api/v1/users",
         headers=h_admin,
         json={
-            "email": "phys-sm@x.com",
-            "full_name": "Phys SM",
+            "email": "phys-ro@x.com",
+            "full_name": "Phys RO",
             "role_id": role["id"],
             "password": "Passw0rd!",
             "division_ids": [div["id"]],
         },
     ).json()
-    h_sm = _login(c, "phys-sm@x.com")
+    h_ro = _login(c, "phys-ro@x.com")
 
     # Read is fine (read-only).
-    listed = c.get(f"/api/v1/cases/{case['id']}/documents", headers=h_sm)
+    listed = c.get(f"/api/v1/cases/{case['id']}/documents", headers=h_ro)
     assert listed.status_code == 200
 
     # Transfer is blocked.
     r = c.post(
         f"/api/v1/documents/{doc['id']}/transfer",
-        headers=h_sm,
-        json={"to_user_id": sm["id"]},
+        headers=h_ro,
+        json={"to_user_id": ro["id"]},
     )
     assert r.status_code == 403
 
 
 # ============================== Print appendix ==============================
-def test_print_view_includes_physical_files_section(client) -> None:
+def test_print_view_omits_physical_files_section(client) -> None:
+    """Physical Files chain-of-custody is internal-only and must
+    not leak into the case application form's print/PDF output."""
     c, _ = client
     h = _admin_h(c)
     div = _make_division(c, h)
@@ -531,12 +541,8 @@ def test_print_view_includes_physical_files_section(client) -> None:
         json={"label": "Original Court Filing", "kind": "court_filing"},
     )
 
-    # Pump through to submit so the print view doesn't blow up on
-    # missing required cheques etc. Phase 40 helper attaches a
-    # signatory so the submit gate passes.
     attach_default_signatory(c, h, case)
 
-    # Render the HTML print page.
     from app.services import render
     from app.db import session as session_mod
 
@@ -545,8 +551,8 @@ def test_print_view_includes_physical_files_section(client) -> None:
         full = db.get(Case, case["id"])
         html = render.render_case_print(db, full)
 
-    assert "Physical Files" in html
-    assert "Original Court Filing" in html
+    assert "Physical Files" not in html
+    assert "Original Court Filing" not in html
 
 
 # ============================== Signature upload ==============================
