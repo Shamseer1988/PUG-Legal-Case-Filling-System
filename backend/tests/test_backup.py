@@ -46,14 +46,18 @@ def client(tmp_path, monkeypatch):
 
     app.dependency_overrides[get_db] = override_get_db
     from app.db import session as session_mod
+    from app.services import seed as seed_mod
 
-    orig = session_mod.SessionLocal
+    orig_sl = session_mod.SessionLocal
+    orig_seed_sl = seed_mod.SessionLocal
     session_mod.SessionLocal = TestingSessionLocal
+    seed_mod.SessionLocal = TestingSessionLocal
     try:
         run_seed()
         yield TestClient(app)
     finally:
-        session_mod.SessionLocal = orig
+        session_mod.SessionLocal = orig_sl
+        seed_mod.SessionLocal = orig_seed_sl
         app.dependency_overrides.clear()
 
 
@@ -81,11 +85,8 @@ def test_create_backup_and_verify(client: TestClient) -> None:
 
 
 def test_unencrypted_backup_when_no_key(client: TestClient, monkeypatch) -> None:
-    monkeypatch.setenv("BACKUP_ENCRYPTION_KEY", "")
-    # Reload settings cache
-    from app.core import config
-
-    config.get_settings.cache_clear()
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "backup_encryption_key", "")
     h = _login(client)
     r = client.post("/api/v1/backups", headers=h, json={"notes": "plain"})
     assert r.status_code == 201, r.text
@@ -134,10 +135,11 @@ def test_restore_requires_confirmation(client: TestClient) -> None:
     assert bad.status_code == 400
 
 
-def test_delete_backup_removes_file(client: TestClient, tmp_path) -> None:
+def test_delete_backup_removes_file(client: TestClient) -> None:
+    from app.core.config import settings
     h = _login(client)
     r = client.post("/api/v1/backups", headers=h, json={}).json()
-    backups_dir = tmp_path / "backups"
+    backups_dir = settings.backup_path
     files_before = list(backups_dir.iterdir())
     assert any(f.name == r["storage_path"] for f in files_before)
 

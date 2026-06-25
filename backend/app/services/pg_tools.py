@@ -125,6 +125,27 @@ def pg_dump_to_file(out_path: Path) -> None:
         raise RuntimeError(f"pg_dump failed (rc={proc.returncode}): {proc.stderr.strip()}")
 
 
+def terminate_other_connections() -> None:
+    """Terminate all other connections to the database to prevent pg_restore from hanging on locks.
+    """
+    if not is_postgres():
+        return
+    try:
+        from app.db.session import engine
+        from sqlalchemy import text
+        with engine.connect() as conn:
+            conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+            conn.execute(text(
+                "SELECT pg_terminate_backend(pid) "
+                "FROM pg_stat_activity "
+                "WHERE datname = current_database() "
+                "  AND pid <> pg_backend_pid();"
+            ))
+        logger.info("Terminated other active database connections before restore.")
+    except Exception as e:
+        logger.warning("Could not terminate other database connections (proceeding anyway): {}", e)
+
+
 def pg_restore_from_file(in_path: Path) -> None:
     """Run ``pg_restore --clean --if-exists`` and replay ``in_path``
     onto the configured DB. Drops + recreates objects; safe to rerun.
@@ -151,6 +172,9 @@ def pg_restore_from_file(in_path: Path) -> None:
         raise RuntimeError(
             f"pg_restore received a directory instead of a .dump file: {in_path}"
         )
+
+    # Terminate other sessions to prevent table locks from blocking pg_restore
+    terminate_other_connections()
 
     db = _parsed_db()
     cmd = [
