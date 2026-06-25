@@ -376,7 +376,13 @@ def create_backup(
 
 # ---------------- list / verify / delete ----------------
 def list_backups(db: Session) -> list[BackupJob]:
-    return db.query(BackupJob).order_by(BackupJob.id.desc()).all()
+    return (
+        db.query(BackupJob)
+        .filter(BackupJob.storage_path != "")
+        .filter(BackupJob.storage_path.is_not(None))
+        .order_by(BackupJob.id.desc())
+        .all()
+    )
 
 
 def get_backup_or_none(db: Session, backup_id: int) -> BackupJob | None:
@@ -483,6 +489,35 @@ def sync_disk_files(db: Session) -> None:
 
     # Update existing rows
     existing_rows = db.query(BackupJob).all()
+
+    # Clean up stale/stray running or empty storage_path rows (e.g. captured inside a pg_dump restored DB)
+    now = _utcnow()
+    for row in list(existing_rows):
+        is_stale = False
+        if row.status == JOB_STATUS_RUNNING:
+            if row.started_at:
+                delta = now - row.started_at
+                # If running for more than 5 minutes, it is stale
+                if delta.total_seconds() > 300:
+                    is_stale = True
+            else:
+                is_stale = True
+        elif not row.storage_path and row.status not in (JOB_STATUS_COMPLETED, JOB_STATUS_FAILED):
+            # Queued/running with no storage path
+            is_stale = True
+
+        if is_stale:
+            logger.info("sync_disk_files: deleting stale/stray backup job row (id={}, status={})", row.id, row.status)
+            db.query(RestoreJob).filter(RestoreJob.backup_id == row.id).delete(synchronize_session="fetch")
+            db.query(RestoreJob).filter(RestoreJob.safety_snapshot_id == row.id).update(
+                {"safety_snapshot_id": None}, synchronize_session="fetch"
+            )
+            db.query(BackupActivityLog).filter(BackupActivityLog.backup_job_id == row.id).update(
+                {"backup_job_id": None}, synchronize_session="fetch"
+            )
+            db.delete(row)
+            existing_rows.remove(row)
+
     tracked_names: set[str] = set()
     for row in existing_rows:
         if not row.storage_path:
