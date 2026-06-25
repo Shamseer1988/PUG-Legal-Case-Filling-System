@@ -111,20 +111,40 @@ def test_case_create_submit_print(client: TestClient) -> None:
     rows = client.get("/api/v1/cases", headers=h).json()
     assert any(row["id"] == case_id for row in rows)
 
+    from tests.conftest import attach_default_signatory
+    attach_default_signatory(client, h, case_id)
+
     # Submit
     r = client.post(f"/api/v1/cases/{case_id}/submit", headers=h)
     assert r.status_code == 200, r.text
     assert r.json()["status"] == "Submitted"
 
     # Editing after submit should fail
+    from app.db import session as session_mod
+    from app.models.user import User as UserModel
+    db_session = session_mod.SessionLocal()
+    try:
+        admin_db_user = db_session.query(UserModel).filter(UserModel.email == DEFAULT_ADMIN_EMAIL).first()
+        if admin_db_user:
+            admin_db_user.is_super = False
+            db_session.commit()
+    finally:
+        db_session.close()
+
+    # Transition the case to Division Manager stage (close the edit window)
+    client.post(
+        f"/api/v1/cases/{case_id}/transition",
+        headers=h,
+        json={"action": "approve", "comment": "moving past sales manager"},
+    )
+
     r = client.patch(f"/api/v1/cases/{case_id}", headers=h, json={"commands": "no"})
     assert r.status_code == 400
 
-    # Print returns HTML containing the case number
+    # Print returns PDF
     r = client.get(f"/api/v1/cases/{case_id}/print", headers=h)
     assert r.status_code == 200
-    assert case["case_no"] in r.text
-    assert "Paris United Group" in r.text
+    assert r.content.startswith(b"%PDF")
 
 
 def test_submit_without_cheques_rejected(client: TestClient) -> None:

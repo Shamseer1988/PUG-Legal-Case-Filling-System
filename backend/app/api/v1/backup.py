@@ -281,6 +281,7 @@ def r2_restore(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(ADMIN_BACKUP)),
 ) -> RestoreJobRead:
+    user_id = user.id if user else None
     if payload.confirmation != "RESTORE":
         raise HTTPException(
             status_code=400,
@@ -299,11 +300,11 @@ def r2_restore(
 
     try:
         job = backup_service.import_uploaded_dump(
-            db, filename=payload.key, content=content, user_id=user.id
+            db, filename=payload.key, content=content, user_id=user_id
         )
         rj = backup_service.restore_backup(
             db, job,
-            user_id=user.id,
+            user_id=user_id,
             take_safety_snapshot=payload.take_safety_snapshot,
         )
     except ValueError as e:
@@ -313,15 +314,23 @@ def r2_restore(
             status_code=500, detail=f"Restore from R2 failed: {e}"
         ) from e
 
-    audit_service.record_event(
-        db,
-        action=audit_service.ACTION_RESTORE,
-        entity_type="BackupJob",
-        entity_id=job.id,
-        summary=f"Restored from R2 object {payload.key}",
-        actor=user,
-        commit=True,
-    )
+    from app.db.session import SessionLocal
+    audit_db = SessionLocal()
+    try:
+        from app.models.user import User as DBUser
+        actor_user = audit_db.get(DBUser, user_id) if user_id else None
+        audit_service.record_event(
+            audit_db,
+            action=audit_service.ACTION_RESTORE,
+            entity_type="BackupJob",
+            entity_id=rj.backup_id,
+            summary=f"Restored from R2 object {payload.key}",
+            actor=actor_user,
+            commit=True,
+        )
+    finally:
+        audit_db.close()
+
     return RestoreJobRead.model_validate(rj)
 
 
@@ -339,6 +348,7 @@ async def upload_and_restore(
     pg_dump format + Legal-app schema first, so a Finance backup
     can't accidentally wipe the Legal DB.
     """
+    user_id = user.id if user else None
     if confirmation != "RESTORE":
         raise HTTPException(
             status_code=400,
@@ -352,29 +362,37 @@ async def upload_and_restore(
 
     try:
         job = backup_service.import_uploaded_dump(
-            db, filename=file.filename, content=content, user_id=user.id
+            db, filename=file.filename, content=content, user_id=user_id
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
 
     try:
         rj = backup_service.restore_backup(
-            db, job, user_id=user.id, take_safety_snapshot=take_safety_snapshot
+            db, job, user_id=user_id, take_safety_snapshot=take_safety_snapshot
         )
     except Exception as e:
         raise HTTPException(
             status_code=500, detail=f"Restore failed after upload: {e}"
         ) from e
 
-    audit_service.record_event(
-        db,
-        action=audit_service.ACTION_RESTORE,
-        entity_type="BackupJob",
-        entity_id=job.id,
-        summary=f"Uploaded & restored backup #{job.id} ({file.filename})",
-        actor=user,
-        commit=True,
-    )
+    from app.db.session import SessionLocal
+    audit_db = SessionLocal()
+    try:
+        from app.models.user import User as DBUser
+        actor_user = audit_db.get(DBUser, user_id) if user_id else None
+        audit_service.record_event(
+            audit_db,
+            action=audit_service.ACTION_RESTORE,
+            entity_type="BackupJob",
+            entity_id=rj.backup_id,
+            summary=f"Uploaded & restored backup ({file.filename})",
+            actor=actor_user,
+            commit=True,
+        )
+    finally:
+        audit_db.close()
+
     return RestoreJobRead.model_validate(rj)
 
 
@@ -457,6 +475,7 @@ def restore_backup(
     db: Session = Depends(get_db),
     user: User = Depends(require_permission(ADMIN_BACKUP)),
 ) -> RestoreJobRead:
+    user_id = user.id if user else None
     if payload.confirmation != "RESTORE":
         raise HTTPException(
             status_code=400,
@@ -466,7 +485,7 @@ def restore_backup(
     try:
         rj = backup_service.restore_backup(
             db, job,
-            user_id=user.id,
+            user_id=user_id,
             take_safety_snapshot=payload.take_safety_snapshot,
             allow_legacy=not pg_tools.is_postgres(),
         )
@@ -478,10 +497,22 @@ def restore_backup(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Restore failed: {e}") from e
 
-    # NOTE: After a pg_restore the original ``db`` session is closed
-    # and the DB has been fully replaced. The restore service already
-    # records the audit trail via log_activity + RestoreJob on a fresh
-    # session, so we don't duplicate the audit_service call here (the
-    # closed session would error anyway).
+    from app.db.session import SessionLocal
+    audit_db = SessionLocal()
+    try:
+        from app.models.user import User as DBUser
+        actor_user = audit_db.get(DBUser, user_id) if user_id else None
+        audit_service.record_event(
+            audit_db,
+            action=audit_service.ACTION_RESTORE,
+            entity_type="BackupJob",
+            entity_id=rj.backup_id,
+            summary=f"Restored backup #{rj.backup_id}",
+            actor=actor_user,
+            commit=True,
+        )
+    finally:
+        audit_db.close()
+
     return RestoreJobRead.model_validate(rj)
 

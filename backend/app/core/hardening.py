@@ -15,7 +15,7 @@ from fastapi import HTTPException, Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from app.core.config import settings
+from app.core.config import get_settings
 
 # ---------------- Security headers ----------------
 DEFAULT_SECURITY_HEADERS = {
@@ -33,7 +33,8 @@ DEFAULT_SECURITY_HEADERS = {
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
-        if not settings.security_headers_enabled:
+        cfg = get_settings()
+        if not cfg.security_headers_enabled:
             return response
         for k, v in DEFAULT_SECURITY_HEADERS.items():
             if k == "Strict-Transport-Security":
@@ -103,11 +104,12 @@ def login_rate_limit(request: Request) -> None:
     ip = (request.headers.get("x-forwarded-for", "") or "").split(",")[0].strip()
     if not ip and request.client:
         ip = request.client.host
+    cfg = get_settings()
     _limiter.check(
         ip,
         "auth_login",
-        per_minute=settings.rate_limit_login_per_minute,
-        per_hour=settings.rate_limit_login_per_hour,
+        per_minute=cfg.rate_limit_login_per_minute,
+        per_hour=cfg.rate_limit_login_per_hour,
     )
 
 

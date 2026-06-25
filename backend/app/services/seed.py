@@ -81,7 +81,8 @@ def seed_sample_masters(db: Session) -> None:
 
 
 def run_seed() -> None:
-    db = SessionLocal()
+    import app.db.session
+    db = app.db.session.SessionLocal()
     try:
         roles = seed_roles(db)
         seed_admin(db, roles["Admin"])

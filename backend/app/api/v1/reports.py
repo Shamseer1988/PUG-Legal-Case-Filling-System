@@ -41,16 +41,6 @@ def _run(request: Request, db: Session, user: User, key: str) -> dict:
     return data
 
 
-@router.get("/{key}")
-def run_report(
-    key: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> dict:
-    return _run(request, db, user, key)
-
-
 @router.get("/{key}.xlsx")
 def export_xlsx(
     key: str,
@@ -96,3 +86,13 @@ def export_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{fname}"'},
     )
+
+
+@router.get("/{key}")
+def run_report(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    return _run(request, db, user, key)

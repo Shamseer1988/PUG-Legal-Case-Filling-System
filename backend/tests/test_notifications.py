@@ -78,7 +78,19 @@ def _submit_case(client: TestClient, h: dict[str, str], with_sm: bool = True) ->
     if with_sm:
         payload["sales_manager_id"] = admin_id
     case = client.post("/api/v1/cases", headers=h, json=payload).json()
+    from tests.conftest import attach_default_signatory
+    attach_default_signatory(client, h, case["id"])
     client.post(f"/api/v1/cases/{case['id']}/submit", headers=h)
+
+    # Process queue synchronously so emails are delivered in console mode
+    from app.db.session import SessionLocal
+    from app.services import email_service
+    db = SessionLocal()
+    try:
+        email_service.process_queue(db)
+    finally:
+        db.close()
+
     return int(case["id"])
 
 
@@ -122,4 +134,17 @@ def test_email_preview_and_resend(client: TestClient) -> None:
     assert "Legal Case Control System" in preview.text
     r = client.post(f"/api/v1/admin/email-log/{lid}/resend", headers=h)
     assert r.status_code == 200
-    assert r.json()["attempts"] >= 2
+
+    # Process queue again so the resent email is delivered
+    from app.db.session import SessionLocal
+    from app.services import email_service
+    db = SessionLocal()
+    try:
+        email_service.process_queue(db)
+    finally:
+        db.close()
+
+    # Get the updated log detail to verify attempts
+    r_detail = client.get(f"/api/v1/admin/email-log/{lid}", headers=h)
+    assert r_detail.status_code == 200
+    assert r_detail.json()["attempts"] >= 2

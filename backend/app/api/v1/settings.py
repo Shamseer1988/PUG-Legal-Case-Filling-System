@@ -86,22 +86,10 @@ def smtp_test_send(
     In console mode the email is logged; the EmailLog still records
     status ``Sent`` with a note. Otherwise it goes through SMTP.
     """
-    log = email_service.queue_email(
+    log = email_service.send_test_email(
         db,
-        to_emails=[str(payload.to)],
-        subject="PUG Legal: SMTP Test",
-        template="notification_email.html",
-        context={
-            "title": "SMTP Test",
-            "subtitle": "If you can read this, your SMTP settings work.",
-            "lines": [
-                f"Sent by {user.full_name} ({user.email}).",
-                "Use the Email Log page to review delivery state.",
-            ],
-            "facts": [],
-            "action_url": "",
-        },
-        event="smtp.test_send",
+        to_email=str(payload.to),
+        requested_by=f"{user.full_name} ({user.email})",
     )
     audit_service.record_event(
         db,

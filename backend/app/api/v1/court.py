@@ -473,24 +473,31 @@ def calendar(
     out: list[CalendarHearing] = []
     seen: set[tuple[int, str]] = set()
     for h, c in q.all():
+        hd = h.hearing_date
+        if hd.tzinfo is None:
+            hd = hd.replace(tzinfo=timezone.utc)
+        nhd = h.next_hearing_date
+        if nhd and nhd.tzinfo is None:
+            nhd = nhd.replace(tzinfo=timezone.utc)
+
         # primary hearing
-        if now <= h.hearing_date <= end and (h.id, "h") not in seen:
+        if now <= hd <= end and (h.id, "h") not in seen:
             out.append(
                 CalendarHearing(
                     id=h.id,
                     case_id=c.id,
                     case_no=c.case_no,
-                    hearing_date=h.hearing_date,
+                    hearing_date=hd,
                     location=h.location,
                     hearing_type=h.hearing_type,
-                    next_hearing_date=h.next_hearing_date,
+                    next_hearing_date=nhd,
                 )
             )
             seen.add((h.id, "h"))
         # next hearing
         if (
-            h.next_hearing_date
-            and now <= h.next_hearing_date <= end
+            nhd
+            and now <= nhd <= end
             and (h.id, "n") not in seen
         ):
             out.append(
@@ -498,7 +505,7 @@ def calendar(
                     id=h.id,
                     case_id=c.id,
                     case_no=c.case_no,
-                    hearing_date=h.next_hearing_date,
+                    hearing_date=nhd,
                     location=h.location,
                     hearing_type=f"Next: {h.hearing_type}",
                     next_hearing_date=None,

@@ -77,6 +77,8 @@ def _seed_one_case(client: TestClient, h: dict[str, str]) -> int:
             ],
         },
     ).json()
+    from tests.conftest import attach_default_signatory
+    attach_default_signatory(client, h, case["id"])
     client.post(f"/api/v1/cases/{case['id']}/submit", headers=h)
     return int(case["id"])
 
