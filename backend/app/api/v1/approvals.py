@@ -44,14 +44,18 @@ def inbox(
     for c in cases:
         user_field = workflow_service.assigned_user_field_for(c)
         assigned_to_me = bool(user_field) and getattr(c, user_field) == user.id  # type: ignore[arg-type]
-        # Clarification-requested cases the user authored count as
-        # "mine" too - they're the ones expected to resubmit.
-        if (
-            not assigned_to_me
-            and c.status == "Clarification Requested"
-            and c.created_by_id == user.id
-        ):
-            assigned_to_me = True
+        # Clarification cases: "mine" if the clarification is aimed at
+        # the current user's stage or (for Accountant targets) at the
+        # case creator.
+        if not assigned_to_me and c.status == "Clarification Requested":
+            target = c.clarify_from_stage or "Accountant"
+            if target == "Accountant":
+                assigned_to_me = c.created_by_id == user.id
+            else:
+                from app.core.workflow import get_stage as _get_stage
+                _tcfg = _get_stage(target)
+                if _tcfg and _tcfg.user_field:
+                    assigned_to_me = getattr(c, _tcfg.user_field, None) == user.id
         if scope == "mine" and not assigned_to_me:
             continue
         out.append(

@@ -73,6 +73,7 @@ type CaseFull = {
   case_no: string;
   status: string;
   current_stage: string;
+  clarify_from_stage: string | null;
   attachments: {
     id: number;
     original_filename: string;
@@ -452,6 +453,7 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             caseId={meta.id}
             status={meta.status}
             currentStage={meta.current_stage}
+            clarifyFromStage={meta.clarify_from_stage ?? null}
             onDone={() => setReloadKey((k) => k + 1)}
           />
           <SignedFormPanel

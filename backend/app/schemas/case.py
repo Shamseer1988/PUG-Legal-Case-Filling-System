@@ -226,3 +226,5 @@ class CaseRead(CaseBase):
     # Phase 40: joint cheque signatories - list of CustomerPartner
     # ids linked via the case_cheque_signatories join table.
     cheque_signatory_partner_ids: list[int] = []
+    # Phase 46: which stage was asked for clarification (None = Accountant)
+    clarify_from_stage: str | None = None

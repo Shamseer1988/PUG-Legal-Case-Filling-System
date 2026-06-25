@@ -380,7 +380,9 @@ def transition_case(
         elif payload.action == "reject":
             case = workflow_service.reject(db, case, user, payload.comment)
         elif payload.action == "request_clarification":
-            case = workflow_service.request_clarification(db, case, user, payload.comment)
+            case = workflow_service.request_clarification(
+                db, case, user, payload.comment, payload.clarify_from_stage
+            )
         elif payload.action == "resubmit":
             case = workflow_service.resubmit(db, case, user, payload.comment)
         elif payload.action == "lawyer_approve":
