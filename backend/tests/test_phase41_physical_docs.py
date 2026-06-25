@@ -117,6 +117,7 @@ def _make_customer(c, h, *, division_id: int) -> dict:
 
 def _make_case(c, h, *, division_id: int) -> dict:
     cust = _make_customer(c, h, division_id=division_id)
+    banks = c.get("/api/v1/masters/banks", headers=h).json()
     case = c.post(
         "/api/v1/cases",
         headers=h,
@@ -126,6 +127,15 @@ def _make_case(c, h, *, division_id: int) -> dict:
             "customer_type": "Retail",
             "actual_due_amount": "100",
             "legal_filing_amount": "100",
+            # Submit needs at least one cheque with a number.
+            "cheques": [
+                {
+                    "cheque_number": f"CHQ-{_P41_SEQ[0]}",
+                    "bank_id": banks[0]["id"] if banks else None,
+                    "amount": "100",
+                    "cheque_type": "Normal",
+                }
+            ],
         },
     ).json()
     return case
@@ -507,6 +517,193 @@ def test_print_view_includes_physical_files_section(client) -> None:
 
 
 # ============================== Signature upload ==============================
+# ============================== Phase 41B: auto-create + workflow gates ==============================
+def test_create_case_auto_registers_case_folder(client) -> None:
+    """Every new case should arrive with a "Case Folder" physical
+    document pre-registered so the chain-of-custody log starts on
+    day 1 instead of waiting for the operator to remember."""
+    c, _ = client
+    h = _admin_h(c)
+    div = _make_division(c, h)
+    case = _make_case(c, h, division_id=div["id"])
+
+    docs = c.get(f"/api/v1/cases/{case['id']}/documents", headers=h).json()
+    assert len(docs) == 1, docs
+    folder = docs[0]
+    assert folder["kind"] == "case_folder"
+    assert folder["label"] == "Case Folder"
+
+    # The auto-created head log entry uses the creator as "recorded by"
+    # with no holder yet (it hasn't moved off the Accountant's desk).
+    detail = c.get(f"/api/v1/documents/{folder['id']}", headers=h).json()
+    assert len(detail["custody_log"]) == 1
+    head = detail["custody_log"][0]
+    assert head["from_user_id"] is None
+    assert head["to_user_id"] is None
+    assert head["note"] == "Case opened"
+
+
+def _make_lawyer(c, h, *, email: str, division_id: int | None = None) -> dict:
+    role = next(
+        r for r in c.get("/api/v1/roles", headers=h).json() if r["name"] == "Lawyer"
+    )
+    return c.post(
+        "/api/v1/users",
+        headers=h,
+        json={
+            "email": email,
+            "full_name": email.split("@")[0],
+            "role_id": role["id"],
+            "password": "Passw0rd!",
+            "division_ids": [division_id] if division_id else [],
+        },
+    ).json()
+
+
+def _approve_case_to_chairman(c, h, case_id: int) -> None:
+    """Push a draft case through the full approval chain to Approved.
+
+    Each stage is approved via the generic transitions endpoint so
+    we don't have to know each role's specific approval URL.
+    """
+    attach_default_signatory(c, h, case_id)
+    c.post(f"/api/v1/cases/{case_id}/submit", headers=h)
+    for _ in range(6):
+        case = c.get(f"/api/v1/cases/{case_id}", headers=h).json()
+        if case["status"] == "Approved":
+            return
+        c.post(
+            f"/api/v1/cases/{case_id}/transition",
+            headers=h,
+            json={"action": "approve", "comment": "ok"},
+        )
+    case = c.get(f"/api/v1/cases/{case_id}", headers=h).json()
+    assert case["status"] == "Approved", case
+
+
+def test_filing_blocked_until_folder_handed_to_lawyer(client) -> None:
+    c, _ = client
+    h = _admin_h(c)
+    div = _make_division(c, h)
+    case = _make_case(c, h, division_id=div["id"])
+    # Make sure a Lawyer-role user exists so the gate activates;
+    # without one, the gate is a no-op for backward compat.
+    lawyer = _make_lawyer(c, h, email="phys-lawyer-gate@x.com")
+
+    # Engage the gate by recording one transfer (to a storage
+    # location, *not* the lawyer). Without an explicit movement the
+    # gate is a no-op for backward compatibility - it only fires
+    # once the operator is actively using the chain of custody.
+    docs = c.get(f"/api/v1/cases/{case['id']}/documents", headers=h).json()
+    folder = docs[0]
+    storage_loc = c.post(
+        "/api/v1/masters/document-locations",
+        headers=h,
+        json={"code": _next_code("LOC"), "name": "Accountant Cabinet", "is_storage": True},
+    ).json()
+    c.post(
+        f"/api/v1/documents/{folder['id']}/transfer",
+        headers=h,
+        json={"to_location_id": storage_loc["id"], "note": "Parking"},
+    )
+
+    _approve_case_to_chairman(c, h, case["id"])
+
+    # File attempt #1: folder is sitting in a cabinet, not with the
+    # lawyer. Backend MUST refuse.
+    r1 = c.post(
+        f"/api/v1/cases/{case['id']}/court-filing",
+        headers=h,
+        json={"police_case_no": "P1", "court_case_no": "C1"},
+    )
+    assert r1.status_code == 400, r1.text
+    assert "physical case folder" in r1.json()["detail"].lower()
+
+    # Hand the folder to the lawyer, then retry - should succeed.
+    c.post(
+        f"/api/v1/documents/{folder['id']}/transfer",
+        headers=h,
+        json={"to_user_id": lawyer["id"], "note": "For court filing"},
+    )
+    r2 = c.post(
+        f"/api/v1/cases/{case['id']}/court-filing",
+        headers=h,
+        json={"police_case_no": "P1", "court_case_no": "C1"},
+    )
+    assert r2.status_code == 201, r2.text
+
+
+def test_closing_blocked_until_folder_back_in_storage(client) -> None:
+    c, _ = client
+    h = _admin_h(c)
+    div = _make_division(c, h)
+    case = _make_case(c, h, division_id=div["id"])
+    lawyer = _make_lawyer(c, h, email="phys-lawyer-close@x.com")
+    storage_loc = c.post(
+        "/api/v1/masters/document-locations",
+        headers=h,
+        json={"code": _next_code("LOC"), "name": "Archive", "is_storage": True},
+    ).json()
+    transient_loc = c.post(
+        "/api/v1/masters/document-locations",
+        headers=h,
+        json={
+            "code": _next_code("LOC"),
+            "name": "Lawyer Office",
+            "is_storage": False,
+        },
+    ).json()
+
+    _approve_case_to_chairman(c, h, case["id"])
+    docs = c.get(f"/api/v1/cases/{case['id']}/documents", headers=h).json()
+    folder = docs[0]
+    # Hand to the lawyer + park at a non-storage location so we can
+    # actually reach Closed-attempt land.
+    c.post(
+        f"/api/v1/documents/{folder['id']}/transfer",
+        headers=h,
+        json={
+            "to_user_id": lawyer["id"],
+            "to_location_id": transient_loc["id"],
+        },
+    )
+    c.post(
+        f"/api/v1/cases/{case['id']}/court-filing",
+        headers=h,
+        json={"police_case_no": "P", "court_case_no": "C"},
+    )
+
+    # Try to close while the folder is at a non-storage location.
+    bad = c.post(
+        f"/api/v1/cases/{case['id']}/close",
+        headers=h,
+        json={
+            "closure_type": "settlement",
+            "settlement_agreement_ref": "SET-1",
+            "command": "Settled",
+        },
+    )
+    assert bad.status_code == 400, bad.text
+    assert "storage" in bad.json()["detail"].lower()
+
+    # Return the folder to a storage location, then close - allowed.
+    c.post(
+        f"/api/v1/documents/{folder['id']}/transfer",
+        headers=h,
+        json={"to_location_id": storage_loc["id"], "note": "Filed away"},
+    )
+    ok = c.post(
+        f"/api/v1/cases/{case['id']}/close",
+        headers=h,
+        json={
+            "closure_type": "settlement",
+            "settlement_agreement_ref": "SET-1",
+            "command": "Settled",
+        },
+    )
+    assert ok.status_code == 201, ok.text
+
+
 def test_transfer_signature_upload_and_view(client) -> None:
     c, _ = client
     h = _admin_h(c)

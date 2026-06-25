@@ -44,6 +44,59 @@ class CourtError(ValueError):
     """Raised when an operation is not allowed."""
 
 
+def _assert_folder_with_lawyer(db: Session, case: Case) -> None:
+    """Phase 41B: a case can only be marked Filed once its physical
+    originals are with a Lawyer-role user. Stops the workflow from
+    advancing past the point where the lawyer literally needs the
+    paper to walk into court.
+
+    Backward-compat carve-out: cases whose physical files have
+    never been actively tracked (only the auto-create head row from
+    case-create) bypass the gate. The check activates as soon as
+    the operator records the first transfer.
+    """
+    from app.models.physical_document import DocumentCustodyLog, PhysicalDocument
+    from app.models.user import Role, User as UserModel
+
+    docs = (
+        db.query(PhysicalDocument)
+        .filter(
+            PhysicalDocument.case_id == case.id,
+            PhysicalDocument.is_active.is_(True),
+        )
+        .all()
+    )
+    if not docs:
+        return
+    lawyer_ids = {
+        u.id
+        for u in db.query(UserModel)
+        .join(Role, UserModel.role_id == Role.id)
+        .filter(Role.name == "Lawyer")
+        .all()
+    }
+    if not lawyer_ids:
+        return
+    # Skip when every active doc is still on its auto-create row -
+    # no real custody activity yet. Once the operator transfers
+    # once, the gate engages.
+    all_untouched = all(
+        db.query(DocumentCustodyLog)
+        .filter(DocumentCustodyLog.document_id == d.id)
+        .count()
+        <= 1
+        for d in docs
+    )
+    if all_untouched:
+        return
+    if any(d.current_holder_user_id in lawyer_ids for d in docs):
+        return
+    raise CourtError(
+        "Hand the physical case folder to the lawyer (Physical Files "
+        "panel → Transfer) before recording the court filing."
+    )
+
+
 # ----------------- Court Filing -----------------
 def create_court_filing(
     db: Session, case: Case, user: User, payload: CourtFilingCreate
@@ -54,6 +107,7 @@ def create_court_filing(
         )
     if db.query(CourtFiling).filter(CourtFiling.case_id == case.id).first():
         raise CourtError("Court filing already exists for this case")
+    _assert_folder_with_lawyer(db, case)
 
     filing = CourtFiling(
         case_id=case.id,

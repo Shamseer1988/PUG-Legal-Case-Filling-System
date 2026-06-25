@@ -64,6 +64,65 @@ def _validate(payload: ClosureCreate) -> None:
         raise ClosureError("A closure command / note is required")
 
 
+def _assert_folder_returned_to_storage(db: Session, case: Case) -> None:
+    """Phase 41B: every active physical document must be parked in
+    a storage location (``DocumentLocation.is_storage = True``) before
+    the case can close. Prevents originals "going missing" the moment
+    a closed case stops getting attention.
+
+    Backward-compat carve-out: a case that never had its physical
+    files actively tracked (only the auto-created head log row from
+    case-create) is allowed to close without ceremony. The gate
+    activates as soon as the operator records the first transfer.
+    Closing a real-usage case still requires every doc back in
+    storage.
+    """
+    from app.models.masters import DocumentLocation
+    from app.models.physical_document import DocumentCustodyLog, PhysicalDocument
+
+    docs = (
+        db.query(PhysicalDocument)
+        .filter(
+            PhysicalDocument.case_id == case.id,
+            PhysicalDocument.is_active.is_(True),
+        )
+        .all()
+    )
+    if not docs:
+        return  # nothing registered -> nothing to enforce
+
+    # Skip when every active doc only has its auto-create row -
+    # i.e. nobody has ever touched the chain of custody for this
+    # case. The gate is meant for cases that ARE being tracked.
+    all_untouched = True
+    for d in docs:
+        log_count = (
+            db.query(DocumentCustodyLog)
+            .filter(DocumentCustodyLog.document_id == d.id)
+            .count()
+        )
+        if log_count > 1:
+            all_untouched = False
+            break
+    if all_untouched:
+        return
+
+    outstanding = []
+    for d in docs:
+        if d.current_location_id is None:
+            outstanding.append(d.label)
+            continue
+        loc = db.get(DocumentLocation, d.current_location_id)
+        if not loc or not loc.is_storage:
+            outstanding.append(d.label)
+    if outstanding:
+        joined = ", ".join(outstanding)
+        raise ClosureError(
+            "Return the physical originals to a storage location before "
+            f"closing: {joined}. Use Physical Files → Transfer."
+        )
+
+
 def close_case(
     db: Session, case: Case, user: User, payload: ClosureCreate
 ) -> CaseClosure:
@@ -79,6 +138,7 @@ def close_case(
         raise ClosureError("Case has already been closed")
 
     _validate(payload)
+    _assert_folder_returned_to_storage(db, case)
 
     closure = CaseClosure(
         case_id=case.id,

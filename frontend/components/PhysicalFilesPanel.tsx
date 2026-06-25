@@ -176,6 +176,10 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
       ) : rows.length === 0 ? (
         <div className="py-8 text-center text-sm text-[rgb(var(--color-muted))]">
           No physical documents registered for this case.
+          <div className="mt-1 text-[10px]">
+            A "Case Folder" row is auto-created when a new case is filed;
+            older cases need a one-time Register Document.
+          </div>
         </div>
       ) : (
         <div className="overflow-hidden rounded-lg border border-[rgb(var(--color-border))]">
@@ -608,7 +612,7 @@ function TransferModal({
                 placeholder="What's being handed over, why, expected return..."
               />
             </Field>
-            <Field label="Optional handover signature">
+            <Field label="Optional receipt / signature (photo)">
               <input
                 type="file"
                 accept="image/*"
@@ -620,6 +624,11 @@ function TransferModal({
                   Will upload: {signature.name}
                 </div>
               )}
+              <div className="mt-1 text-[10px] text-[rgb(var(--color-muted))]">
+                Attach a photo of the signed handover slip or recipient
+                signature. Required to file the case in court if the lawyer
+                later disputes receipt.
+              </div>
             </Field>
           </div>
         </div>
@@ -708,7 +717,7 @@ function CustodyTimeline({ log }: { log: CustodyLog[] }) {
                 onClick={() => openSignature(l)}
                 className="mt-1 inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] hover:bg-[rgb(var(--color-border))]/40"
               >
-                <FileSignature className="h-3 w-3" /> View signature
+                <FileSignature className="h-3 w-3" /> View receipt / signature
               </button>
             )}
           </li>

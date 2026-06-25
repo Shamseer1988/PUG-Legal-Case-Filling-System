@@ -14,6 +14,11 @@ from app.models.case import (
     Cheque,
 )
 from app.models.masters import CustomerPartner
+from app.models.physical_document import (
+    DOC_KIND_CASE_FOLDER,
+    DocumentCustodyLog,
+    PhysicalDocument,
+)
 from app.models.user import User
 from app.schemas.case import CaseCreate, CaseUpdate, ChequeCreate, ChequeUpdate
 
@@ -126,6 +131,34 @@ def create_case(db: Session, payload: CaseCreate, current_user: User) -> Case:
     # Phase 40: link joint cheque signatories. Validation runs
     # even at create-time so a malformed payload fails fast.
     _apply_cheque_signatories(db, case, payload.cheque_signatory_partner_ids)
+
+    # Phase 41B: auto-register one "Case Folder" physical document
+    # so every case starts the chain-of-custody log on day 1.
+    # Filed and Closed transitions check this row's whereabouts -
+    # see workflow_service.guard_filed / guard_closed.
+    folder = PhysicalDocument(
+        case_id=case.id,
+        kind=DOC_KIND_CASE_FOLDER,
+        label="Case Folder",
+        notes="Physical originals bundle for this case",
+        is_active=True,
+    )
+    db.add(folder)
+    db.flush()
+    db.add(
+        DocumentCustodyLog(
+            document_id=folder.id,
+            transferred_at=datetime.utcnow(),
+            recorded_by_user_id=current_user.id,
+            from_user_id=None,
+            to_user_id=None,
+            location_id=None,
+            location_text="",
+            note="Case opened",
+        )
+    )
+    db.flush()
+
     db.commit()
     db.refresh(case)
     return case
