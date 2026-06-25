@@ -222,3 +222,29 @@ class CaseTypeUpdate(BaseModel):
 class CaseTypeRead(CaseTypeBase):
     model_config = ConfigDict(from_attributes=True)
     id: int
+
+
+# ---------- Document Location (Phase 41) ----------
+class DocumentLocationBase(BaseModel):
+    code: str = Field(min_length=1, max_length=40)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = ""
+    is_storage: bool = True
+    is_active: bool = True
+
+
+class DocumentLocationCreate(DocumentLocationBase):
+    pass
+
+
+class DocumentLocationUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+    description: str | None = None
+    is_storage: bool | None = None
+    is_active: bool | None = None
+
+
+class DocumentLocationRead(DocumentLocationBase):
+    model_config = ConfigDict(from_attributes=True)
+    id: int

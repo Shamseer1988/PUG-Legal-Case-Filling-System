@@ -29,6 +29,9 @@ SIGNATURES_SUBDIR = "signatures"
 TRANSITIONS_SUBDIR = "transitions"
 CHEQUES_SUBDIR = "cheques"
 PARTNERS_SUBDIR = "partners"
+# Phase 41: handover signature images live under
+# storage/custody/<log_id>/.
+CUSTODY_SUBDIR = "custody"
 
 # Image MIME -> file extension for signature uploads
 _SIG_MIME_EXT = {
@@ -332,5 +335,52 @@ def get_partner_id_document_path(partner_id: int, stored_filename: str) -> Path:
 
 def delete_partner_id_document(partner_id: int, stored_filename: str) -> None:
     p = get_partner_id_document_path(partner_id, stored_filename)
+    if p.exists():
+        p.unlink()
+
+
+# ===================== Custody handover signatures (Phase 41) =====================
+def _custody_dir(log_id: int) -> Path:
+    p = settings.storage_path / CUSTODY_SUBDIR / str(log_id)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
+
+def save_custody_signature(
+    log_id: int, upload: UploadFile
+) -> tuple[str, int]:
+    """Save a handover signature image for one custody log row.
+
+    Replaces any prior signature on the same row (re-uploads
+    overwrite). Returns ``(stored_filename, size_bytes)``.
+    """
+    original = upload.filename or "signature"
+    ext = Path(original).suffix
+    if not ext:
+        ext = _SIG_MIME_EXT.get((upload.content_type or "").lower(), ".png")
+    for old in _custody_dir(log_id).iterdir():
+        try:
+            old.unlink()
+        except OSError:
+            pass
+    stored = f"{uuid.uuid4().hex}{ext}"
+    target = _custody_dir(log_id) / stored
+    size = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            out.write(chunk)
+    return stored, size
+
+
+def get_custody_signature_path(log_id: int, stored_filename: str) -> Path:
+    return _custody_dir(log_id) / stored_filename
+
+
+def delete_custody_signature(log_id: int, stored_filename: str) -> None:
+    p = get_custody_signature_path(log_id, stored_filename)
     if p.exists():
         p.unlink()

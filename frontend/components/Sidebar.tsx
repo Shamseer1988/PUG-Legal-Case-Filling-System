@@ -85,6 +85,7 @@ const GROUPS: Group[] = [
       { href: '/masters/salesmen', label: 'Salesmen', icon: Users, menuId: MENU.MASTERS_SALESMEN },
       { href: '/masters/lawyers', label: 'Lawyers', icon: Scale, menuId: MENU.MASTERS_LAWYERS },
       { href: '/masters/case-types', label: 'Case Types', icon: Tag, menuId: MENU.MASTERS_CASE_TYPES },
+      { href: '/masters/document-locations', label: 'Document Locations', icon: HardDrive, menuId: MENU.MASTERS_DOCUMENT_LOCATIONS },
     ],
   },
   {

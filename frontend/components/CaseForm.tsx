@@ -18,6 +18,7 @@ import { PreviousAttachmentsModal } from '@/components/PreviousAttachmentsModal'
 import { SignedFormPanel } from '@/components/SignedFormPanel';
 import { CategorizedAttachments } from '@/components/CategorizedAttachments';
 import { ChequeAttachmentButton } from '@/components/ChequeAttachmentButton';
+import { PhysicalFilesPanel } from '@/components/PhysicalFilesPanel';
 
 type ChequeDraft = {
   // The DB row id, set after the case has been saved at least once.
@@ -834,6 +835,21 @@ export function CaseForm({ caseId }: { caseId?: number }) {
             onChange={(atts) => setMeta({ ...meta, attachments: atts })}
           />
         </Card>
+      )}
+
+      {/* Phase 41: physical-document chain of custody. Mounted
+          conditionally - the panel itself self-loads the doc list
+          and hides write controls when the user lacks transfer
+          permission. */}
+      {isEdit && meta && (me?.permissions?.includes('documents:read') ||
+        me?.permissions?.includes('*')) && (
+        <PhysicalFilesPanel
+          caseId={meta.id}
+          canTransfer={Boolean(
+            me?.permissions?.includes('documents:transfer') ||
+              me?.permissions?.includes('*'),
+          )}
+        />
       )}
 
       <div className="sticky bottom-0 -mx-6 border-t border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]/95 px-6 py-3 backdrop-blur">
