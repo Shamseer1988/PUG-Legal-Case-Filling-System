@@ -60,17 +60,23 @@ ROLE_PRESETS: dict[str, list[str]] = {
         DOCUMENTS_READ,
         DOCUMENTS_TRANSFER,
     ],
+    # Phase 45/46 fix: every approval-stage role is a possible recipient
+    # of a physical-file transfer (Case Folder hops up the approval chain
+    # in person). They need DOCUMENTS_TRANSFER to accept/reject the
+    # parcel and upload the signed acknowledgment.
     "Sales Manager": [
         CASES_READ,
         CASES_APPROVE_SALES_MGR,
         MASTERS_READ,
         DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
     "Division Manager": [
         CASES_READ,
         CASES_APPROVE_DIV_MGR,
         MASTERS_READ,
         DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
     "Auditor": [
         CASES_READ,
@@ -78,6 +84,7 @@ ROLE_PRESETS: dict[str, list[str]] = {
         ADMIN_AUDIT_LOG,
         MASTERS_READ,
         DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
     "Finance Manager": [
         CASES_READ,
@@ -86,18 +93,21 @@ ROLE_PRESETS: dict[str, list[str]] = {
         EXPENSES_APPROVE,
         MASTERS_READ,
         DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
     "Executive Director": [
         CASES_READ,
         CASES_APPROVE_ED,
         MASTERS_READ,
         DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
     "Chairman / MD": [
         CASES_READ,
         CASES_APPROVE_FINAL,
         MASTERS_READ,
         DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
     "Lawyer": [
         CASES_READ,
