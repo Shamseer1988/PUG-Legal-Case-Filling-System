@@ -6,9 +6,11 @@ import { CrudPage } from '@/components/CrudPage';
 import { CustomerPartnersModal } from '@/components/CustomerPartnersModal';
 import { hasPermission, useAuthStore } from '@/lib/auth';
 import { useMasterOptions } from '@/lib/useMasters';
+import { useT } from '@/lib/i18n';
 
 export default function CustomersPage() {
   const me = useAuthStore((s) => s.me);
+  const t = useT();
   const divisions = useMasterOptions('/api/v1/masters/divisions', 'name');
   const salesmen = useMasterOptions('/api/v1/masters/salesmen', 'name');
   const canWriteMasters = hasPermission(me, 'masters:write');
@@ -19,7 +21,7 @@ export default function CustomersPage() {
   return (
     <>
       <CrudPage
-        title="Customers"
+        title={t('customers.title')}
         resource="/api/v1/masters/customers"
         canWrite={canWriteMasters}
         emptyTemplate={{
@@ -34,11 +36,11 @@ export default function CustomersPage() {
           is_active: true,
         }}
         fields={[
-          { name: 'code', label: 'Code', required: true },
-          { name: 'name', label: 'Name', required: true },
+          { name: 'code', label: t('customers.col.code'), required: true },
+          { name: 'name', label: t('customers.col.name'), required: true },
           {
             name: 'customer_type',
-            label: 'Type',
+            label: t('customers.col.type'),
             type: 'select',
             options: [
               { value: 'Retail', label: 'Retail' },
@@ -46,40 +48,40 @@ export default function CustomersPage() {
               { value: 'Corporate', label: 'Corporate' },
             ],
           },
-          { name: 'phone', label: 'Phone' },
-          { name: 'email', label: 'Email', type: 'email' },
-          { name: 'address', label: 'Address' },
+          { name: 'phone', label: t('customers.col.phone') },
+          { name: 'email', label: t('customers.col.email'), type: 'email' },
+          { name: 'address', label: t('customers.col.address') },
           {
             name: 'division_id',
-            label: 'Division',
+            label: t('customers.col.division'),
             type: 'select',
             options: divisions,
             allowEmpty: true,
           },
           {
             name: 'salesman_id',
-            label: 'Salesman',
+            label: t('customers.col.salesman'),
             type: 'select',
             options: salesmen,
             allowEmpty: true,
           },
-          { name: 'is_active', label: 'Active', type: 'checkbox' },
+          { name: 'is_active', label: t('customers.col.active'), type: 'checkbox' },
         ]}
         columns={[
-          { key: 'code', label: 'Code' },
-          { key: 'name', label: 'Name' },
-          { key: 'customer_type', label: 'Type' },
+          { key: 'code', label: t('customers.col.code') },
+          { key: 'name', label: t('customers.col.name') },
+          { key: 'customer_type', label: t('customers.col.type') },
           {
             key: 'division_id',
-            label: 'Division',
+            label: t('customers.col.division'),
             render: (v) => divisions.find((d) => d.value === v)?.label ?? '-',
           },
           {
             key: 'salesman_id',
-            label: 'Salesman',
+            label: t('customers.col.salesman'),
             render: (v) => salesmen.find((s) => s.value === v)?.label ?? '-',
           },
-          { key: 'is_active', label: 'Active', render: (v) => (v ? 'Yes' : 'No') },
+          { key: 'is_active', label: t('customers.col.active'), render: (v) => (v ? t('common.yes') : t('common.no')) },
         ]}
         rowActions={(row) => (
           <button
@@ -87,9 +89,9 @@ export default function CustomersPage() {
               setPartnersFor({ id: row.id, name: String(row.name ?? `#${row.id}`) })
             }
             className="mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
-            title="Manage partners (cheque signatories, authorised signatories, etc.)"
+            title={t('customers.col.partners')}
           >
-            <Users className="h-3 w-3" /> Partners
+            <Users className="h-3 w-3" /> {t('customers.col.partners')}
           </button>
         )}
       />

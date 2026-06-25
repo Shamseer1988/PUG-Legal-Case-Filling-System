@@ -2,12 +2,14 @@
 
 import { CrudPage } from '@/components/CrudPage';
 import { hasPermission, useAuthStore } from '@/lib/auth';
+import { useT } from '@/lib/i18n';
 
 export default function DivisionsPage() {
   const me = useAuthStore((s) => s.me);
+  const t = useT();
   return (
     <CrudPage
-      title="Divisions"
+      title={t('masters.divisions.title')}
       resource="/api/v1/masters/divisions"
       canWrite={hasPermission(me, 'masters:write')}
       emptyTemplate={{
@@ -20,22 +22,22 @@ export default function DivisionsPage() {
         is_active: true,
       }}
       fields={[
-        { name: 'code', label: 'Code', required: true },
-        { name: 'name', label: 'Name', required: true },
-        { name: 'address', label: 'Address' },
-        { name: 'accountant_email', label: 'Accountant Email', type: 'email' },
-        { name: 'manager_email', label: 'Manager Email', type: 'email' },
-        { name: 'sales_manager_email', label: 'Sales Manager Email', type: 'email' },
-        { name: 'is_active', label: 'Active', type: 'checkbox' },
+        { name: 'code', label: t('masters.col.code'), required: true },
+        { name: 'name', label: t('masters.col.name'), required: true },
+        { name: 'address', label: t('masters.col.address') },
+        { name: 'accountant_email', label: t('masters.col.accountant_email'), type: 'email' },
+        { name: 'manager_email', label: t('masters.col.manager_email'), type: 'email' },
+        { name: 'sales_manager_email', label: t('masters.col.sales_manager_email'), type: 'email' },
+        { name: 'is_active', label: t('common.active'), type: 'checkbox' },
       ]}
       columns={[
-        { key: 'code', label: 'Code' },
-        { key: 'name', label: 'Name' },
-        { key: 'manager_email', label: 'Manager Email' },
+        { key: 'code', label: t('masters.col.code') },
+        { key: 'name', label: t('masters.col.name') },
+        { key: 'manager_email', label: t('masters.col.manager_email') },
         {
           key: 'is_active',
-          label: 'Active',
-          render: (v) => (v ? 'Yes' : 'No'),
+          label: t('common.active'),
+          render: (v) => (v ? t('common.yes') : t('common.no')),
         },
       ]}
     />

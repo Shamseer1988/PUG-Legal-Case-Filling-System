@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, Trash2, Pencil, X, Save } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { useT } from '@/lib/i18n';
 
 export type CrudField =
   | { name: string; label: string; type?: 'text' | 'email' | 'number'; required?: boolean; readOnly?: boolean }
@@ -51,6 +52,7 @@ export function CrudPage({
   canWrite = true,
   rowActions,
 }: Props) {
+  const t = useT();
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<Row | null>(null);
@@ -113,7 +115,7 @@ export function CrudPage({
   }
 
   async function remove(id: number) {
-    if (!confirm('Delete this record?')) return;
+    if (!confirm(t('common.confirm_delete'))) return;
     try {
       await api(`${resource}/${id}`, { method: 'DELETE' });
       reload();
@@ -133,7 +135,7 @@ export function CrudPage({
             onClick={startCreate}
             className="flex items-center gap-2 rounded-md bg-pug-gold-500 px-3 py-2 text-sm font-semibold text-pug-navy-800 hover:bg-pug-gold-400"
           >
-            <Plus className="h-4 w-4" /> New
+            <Plus className="h-4 w-4" /> {t('btn.new')}
           </button>
         )}
       </div>
@@ -147,7 +149,7 @@ export function CrudPage({
       {formOpen && (
         <div className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-5 shadow-soft">
           <div className="mb-3 text-sm font-semibold">
-            {editing ? `Edit ${title.slice(0, -1)} #${editing.id}` : `New ${title.slice(0, -1)}`}
+            {editing ? `${t('common.edit_record')} #${editing.id}` : t('common.new_record')}
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {fields.map((f) => {
@@ -165,13 +167,13 @@ export function CrudPage({
               onClick={save}
               className="flex items-center gap-2 rounded-md bg-pug-navy-700 px-3 py-2 text-sm font-semibold text-white hover:bg-pug-navy-600"
             >
-              <Save className="h-4 w-4" /> Save
+              <Save className="h-4 w-4" /> {t('btn.save')}
             </button>
             <button
               onClick={cancel}
               className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
             >
-              <X className="h-4 w-4" /> Cancel
+              <X className="h-4 w-4" /> {t('btn.cancel')}
             </button>
           </div>
         </div>
@@ -186,20 +188,20 @@ export function CrudPage({
                   {c.label}
                 </th>
               ))}
-              {canWrite && <th className="px-4 py-3 text-right">Actions</th>}
+              {canWrite && <th className="px-4 py-3 text-right">{t('common.actions')}</th>}
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-4 py-6 text-center text-[rgb(var(--color-muted))]">
-                  Loading...
+                  {t('common.loading')}
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
                 <td colSpan={columns.length + 1} className="px-4 py-6 text-center text-[rgb(var(--color-muted))]">
-                  No records yet.
+                  {t('common.no_records')}
                 </td>
               </tr>
             ) : (
@@ -219,13 +221,13 @@ export function CrudPage({
                             onClick={() => startEdit(r)}
                             className="mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
                           >
-                            <Pencil className="h-3 w-3" /> Edit
+                            <Pencil className="h-3 w-3" /> {t('btn.edit')}
                           </button>
                           <button
                             onClick={() => remove(r.id)}
                             className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-rose-600 hover:bg-rose-500/10"
                           >
-                            <Trash2 className="h-3 w-3" /> Delete
+                            <Trash2 className="h-3 w-3" /> {t('btn.delete')}
                           </button>
                         </>
                       )}
@@ -250,6 +252,7 @@ function FieldInput({
   draft: Record<string, unknown>;
   setDraft: (d: Record<string, unknown>) => void;
 }) {
+  const t = useT();
   const value = draft[field.name];
   const onChange = (v: unknown) => setDraft({ ...draft, [field.name]: v });
 
@@ -297,7 +300,7 @@ function FieldInput({
             onChange={(e) => toggleAll(e.target.checked)}
             className="h-4 w-4"
           />
-          {allLabel ?? 'All Companies'}
+          {allLabel ?? t('common.all_companies')}
         </label>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
           {options.map((o) => {
@@ -321,7 +324,7 @@ function FieldInput({
             );
           })}
           {options.length === 0 && (
-            <span className="text-xs text-[rgb(var(--color-muted))]">No divisions found.</span>
+            <span className="text-xs text-[rgb(var(--color-muted))]">{t('common.no_divisions')}</span>
           )}
         </div>
       </fieldset>
