@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { hasPermission, useAuthStore } from '@/lib/auth';
 import { useMasterOptions } from '@/lib/useMasters';
+import { useT, useLocale, tStatus, tStage } from '@/lib/i18n';
 
 type Row = {
   id: number;
@@ -82,6 +83,8 @@ const PAGE_SIZE = 25;
 
 export default function CasesListPage() {
   const me = useAuthStore((s) => s.me);
+  const t = useT();
+  const locale = useLocale();
   const divisions = useMasterOptions('/api/v1/masters/divisions');
   const [page, setPage] = useState<Page>({ items: [], total: 0, limit: 0, offset: 0 });
   const [loading, setLoading] = useState(true);
@@ -174,13 +177,13 @@ export default function CasesListPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Cases</h1>
+        <h1 className="text-xl font-semibold">{t('cases.title')}</h1>
         {hasPermission(me, 'cases:create') && (
           <Link
             href="/cases/new"
             className="flex items-center gap-2 rounded-md bg-pug-gold-500 px-3 py-2 text-sm font-semibold text-pug-navy-800 hover:bg-pug-gold-400"
           >
-            <Plus className="h-4 w-4" /> New Case
+            <Plus className="h-4 w-4" /> {t('cases.new')}
           </Link>
         )}
       </div>
@@ -190,7 +193,7 @@ export default function CasesListPage() {
         <aside className="space-y-4 rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-4 shadow-soft">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-400">
-              <Filter className="h-4 w-4" /> Filters
+              <Filter className="h-4 w-4" /> {t('cases.filters')}
               {activeFilterCount > 0 && (
                 <span className="rounded-full bg-pug-gold-500/20 px-2 py-0.5 text-[10px] font-bold text-pug-gold-700 dark:text-pug-gold-300">
                   {activeFilterCount}
@@ -202,7 +205,7 @@ export default function CasesListPage() {
                 onClick={clearAll}
                 className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-rose-600 hover:bg-rose-500/10"
               >
-                <X className="h-3 w-3" /> Clear
+                <X className="h-3 w-3" /> {t('btn.clear')}
               </button>
             )}
           </div>
@@ -213,38 +216,38 @@ export default function CasesListPage() {
             <input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Search case no / customer / notes"
+              placeholder={t('cases.search_placeholder')}
               className="w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent py-1.5 pl-7 pr-2 text-sm focus:border-pug-gold-500 focus:outline-none"
             />
           </div>
 
           {/* Status checkboxes */}
-          <FilterGroup title="Status">
+          <FilterGroup title={t('cases.filter.status')}>
             {ALL_STATUSES.map((s) => (
               <CheckRow
                 key={s}
                 checked={statusIn.has(s)}
                 onChange={() => toggle(statusIn, setStatusIn, s)}
-                label={s}
+                label={tStatus(locale, s)}
               />
             ))}
           </FilterGroup>
 
           {/* Stage checkboxes */}
-          <FilterGroup title="Stage">
+          <FilterGroup title={t('cases.filter.stage')}>
             {ALL_STAGES.map((s) => (
               <CheckRow
                 key={s}
                 checked={stageIn.has(s)}
                 onChange={() => toggle(stageIn, setStageIn, s)}
-                label={s}
+                label={tStage(locale, s)}
               />
             ))}
           </FilterGroup>
 
           {/* Division multi-select */}
           {divisions.length > 0 && (
-            <FilterGroup title="Division">
+            <FilterGroup title={t('cases.filter.division')}>
               {divisions.map((d) => (
                 <CheckRow
                   key={d.value}
@@ -257,11 +260,11 @@ export default function CasesListPage() {
           )}
 
           {/* Case type radio */}
-          <FilterGroup title="Case Type">
+          <FilterGroup title={t('cases.filter.case_type')}>
             {[
-              { v: 'all', label: 'All' },
-              { v: 'criminal', label: 'Criminal' },
-              { v: 'civil', label: 'Civil' },
+              { v: 'all', label: t('common.all') },
+              { v: 'criminal', label: t('cases.type.criminal') },
+              { v: 'civil', label: t('cases.type.civil') },
             ].map((opt) => (
               <label key={opt.v} className="flex items-center gap-2 text-sm">
                 <input
@@ -276,12 +279,12 @@ export default function CasesListPage() {
           </FilterGroup>
 
           {/* Amount range */}
-          <FilterGroup title="Legal Amount">
+          <FilterGroup title={t('cases.filter.amount')}>
             <div className="grid grid-cols-2 gap-2">
               <input
                 type="number"
                 inputMode="decimal"
-                placeholder="Min"
+                placeholder={t('cases.filter.min')}
                 value={amountMin}
                 onChange={(e) => setAmountMin(e.target.value)}
                 className="rounded-md border border-[rgb(var(--color-border))] bg-transparent px-2 py-1 text-sm text-right tabular-nums focus:border-pug-gold-500 focus:outline-none"
@@ -289,7 +292,7 @@ export default function CasesListPage() {
               <input
                 type="number"
                 inputMode="decimal"
-                placeholder="Max"
+                placeholder={t('cases.filter.max')}
                 value={amountMax}
                 onChange={(e) => setAmountMax(e.target.value)}
                 className="rounded-md border border-[rgb(var(--color-border))] bg-transparent px-2 py-1 text-sm text-right tabular-nums focus:border-pug-gold-500 focus:outline-none"
@@ -298,7 +301,7 @@ export default function CasesListPage() {
           </FilterGroup>
 
           {/* Date range */}
-          <FilterGroup title="Created Between">
+          <FilterGroup title={t('cases.filter.created_between')}>
             <div className="grid grid-cols-2 gap-2">
               <input
                 type="date"
@@ -327,8 +330,8 @@ export default function CasesListPage() {
           <div className="flex items-center justify-between text-xs text-[rgb(var(--color-muted))]">
             <div>
               {loading
-                ? 'Searching...'
-                : `Showing ${fromIndex}-${toIndex} of ${page.total}`}
+                ? t('common.searching')
+                : `${t('common.showing')} ${fromIndex}-${toIndex} ${t('common.of')} ${page.total}`}
             </div>
             <div className="flex items-center gap-1">
               <button
@@ -354,39 +357,35 @@ export default function CasesListPage() {
             <table className="w-full text-sm">
               <thead className="bg-[rgb(var(--color-border))]/30 text-left text-xs uppercase tracking-wider text-[rgb(var(--color-muted))]">
                 <tr>
-                  <th className="px-4 py-3">Case No</th>
-                  <th className="px-4 py-3">Customer</th>
-                  <th className="px-4 py-3">Division</th>
-                  <th className="px-4 py-3">Type</th>
-                  <th className="px-4 py-3">Legal Amount</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Stage</th>
-                  <th className="px-4 py-3">Created</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
+                  <th className="px-4 py-3">{t('cases.col.case_no')}</th>
+                  <th className="px-4 py-3">{t('cases.col.customer')}</th>
+                  <th className="px-4 py-3">{t('cases.col.division')}</th>
+                  <th className="px-4 py-3">{t('cases.col.type')}</th>
+                  <th className="px-4 py-3">{t('cases.col.legal_amount')}</th>
+                  <th className="px-4 py-3">{t('cases.col.status')}</th>
+                  <th className="px-4 py-3">{t('cases.col.stage')}</th>
+                  <th className="px-4 py-3">{t('cases.col.created')}</th>
+                  <th className="px-4 py-3 text-right">{t('common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-6 text-center text-[rgb(var(--color-muted))]">
-                      Loading...
+                      {t('common.loading')}
                     </td>
                   </tr>
                 ) : page.items.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-4 py-10 text-center text-[rgb(var(--color-muted))]">
                       {activeFilterCount > 0
-                        ? 'No cases match the active filters.'
-                        : 'No cases yet. Click '}
-                      {activeFilterCount === 0 && (
-                        <strong>New Case</strong>
-                      )}
-                      {activeFilterCount === 0 && ' to file the first one.'}
+                        ? t('cases.empty.no_match')
+                        : t('cases.empty.no_cases')}
                     </td>
                   </tr>
                 ) : (
                   page.items.map((r) => {
-                    const types = [r.is_criminal && 'Criminal', r.is_civil && 'Civil']
+                    const types = [r.is_criminal && t('cases.type.criminal'), r.is_civil && t('cases.type.civil')]
                       .filter(Boolean)
                       .join(' + ');
                     return (
@@ -414,11 +413,11 @@ export default function CasesListPage() {
                                 'bg-slate-500/15 text-slate-600 border-slate-500/40')
                             }
                           >
-                            {r.status}
+                            {tStatus(locale, r.status)}
                           </span>
                         </td>
                         <td className="px-4 py-2 text-xs text-[rgb(var(--color-muted))]">
-                          {r.current_stage}
+                          {tStage(locale, r.current_stage)}
                         </td>
                         <td className="px-4 py-2 text-xs text-[rgb(var(--color-muted))]">
                           {new Date(r.created_at).toLocaleDateString()}
@@ -428,13 +427,13 @@ export default function CasesListPage() {
                             href={`/cases/${r.id}`}
                             className="mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
                           >
-                            <FileText className="h-3 w-3" /> Open
+                            <FileText className="h-3 w-3" /> {t('btn.open')}
                           </Link>
                           <Link
                             href={`/cases/${r.id}/print`}
                             className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
                           >
-                            <Printer className="h-3 w-3" /> Print
+                            <Printer className="h-3 w-3" /> {t('btn.print')}
                           </Link>
                         </td>
                       </tr>

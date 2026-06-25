@@ -33,6 +33,7 @@ import {
 } from 'recharts';
 import { api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
+import { useT, useLocale, tStatus } from '@/lib/i18n';
 
 type Kpis = {
   total_cases: number;
@@ -95,6 +96,8 @@ const ALL_STATUSES = [
 
 export default function DashboardPage() {
   const me = useAuthStore((s) => s.me);
+  const t = useT();
+  const locale = useLocale();
 
   const [kpis, setKpis] = useState<Kpis | null>(null);
   const [statusCounts, setStatusCounts] = useState<StatusCount[]>([]);
@@ -140,10 +143,11 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">
-            Welcome{me?.full_name ? `, ${me.full_name.split(' ')[0]}` : ''}
+            {t('dashboard.welcome')}
+            {me?.full_name ? `, ${me.full_name.split(' ')[0]}` : ''}
           </h1>
           <p className="text-xs text-[rgb(var(--color-muted))]">
-            Live overview of legal cases scoped to your role.
+            {t('dashboard.live_overview')}
           </p>
         </div>
         <button
@@ -151,7 +155,7 @@ export default function DashboardPage() {
           disabled={loading}
           className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40 disabled:opacity-50"
         >
-          <RefreshCw className={'h-4 w-4 ' + (loading ? 'animate-spin' : '')} /> Refresh
+          <RefreshCw className={'h-4 w-4 ' + (loading ? 'animate-spin' : '')} /> {t('btn.refresh')}
         </button>
       </div>
 
@@ -193,52 +197,52 @@ export default function DashboardPage() {
       {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <KpiCard
-          label="Total Cases"
+          label={t('dashboard.kpi.total_cases')}
           value={kpis?.total_cases ?? 0}
           icon={<FileText className="h-4 w-4" />}
           accent="navy"
           href="/cases"
         />
         <KpiCard
-          label="Open"
+          label={t('dashboard.kpi.open')}
           value={kpis?.open_cases ?? 0}
           icon={<Briefcase className="h-4 w-4" />}
           accent="gold"
           href="/cases"
         />
         <KpiCard
-          label="Approved / Filed"
+          label={t('dashboard.kpi.approved_filed')}
           value={kpis?.approved_or_filed ?? 0}
           icon={<Gavel className="h-4 w-4" />}
           accent="green"
           href="/cases"
         />
         <KpiCard
-          label="Legal Amount"
+          label={t('dashboard.kpi.legal_amount')}
           value={formatCurrency(kpis?.total_legal_amount ?? '0')}
           icon={<TrendingUp className="h-4 w-4" />}
           accent="navy"
         />
         <KpiCard
-          label="Cash Paid"
+          label={t('dashboard.kpi.cash_paid')}
           value={formatCurrency(kpis?.total_recovered ?? '0')}
           icon={<Banknote className="h-4 w-4" />}
           accent="green"
           href="/cash-requests"
         />
         <KpiCard
-          label="My Inbox"
+          label={t('dashboard.kpi.my_inbox')}
           value={kpis?.pending_my_inbox ?? 0}
           icon={<Check className="h-4 w-4" />}
           accent={kpis && kpis.overdue_count > 0 ? 'red' : 'gold'}
-          sub={kpis && kpis.overdue_count > 0 ? `${kpis.overdue_count} overdue` : undefined}
+          sub={kpis && kpis.overdue_count > 0 ? `${kpis.overdue_count} ${t('dashboard.kpi.overdue')}` : undefined}
           href="/approvals"
         />
       </div>
 
       {/* Charts row */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Panel title="Monthly Activity" className="lg:col-span-2">
+        <Panel title={t('dashboard.panel.monthly_activity')} className="lg:col-span-2">
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={trend}>
@@ -256,7 +260,7 @@ export default function DashboardPage() {
                 <Line
                   type="monotone"
                   dataKey="cases_created"
-                  name="Created"
+                  name={t('dashboard.legend.created')}
                   stroke="#1a234a"
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -264,7 +268,7 @@ export default function DashboardPage() {
                 <Line
                   type="monotone"
                   dataKey="cases_approved"
-                  name="Approved"
+                  name={t('dashboard.legend.approved')}
                   stroke="#c9a14a"
                   strokeWidth={2}
                   dot={{ r: 3 }}
@@ -274,15 +278,18 @@ export default function DashboardPage() {
           </div>
         </Panel>
 
-        <Panel title="Status Breakdown">
+        <Panel title={t('dashboard.panel.status_breakdown')}>
           {statusCounts.length === 0 ? (
-            <EmptyState text="No cases yet" />
+            <EmptyState text={t('dashboard.empty.no_cases')} />
           ) : (
             <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={statusCounts}
+                    data={statusCounts.map((s) => ({
+                      ...s,
+                      status: tStatus(locale, s.status),
+                    }))}
                     dataKey="count"
                     nameKey="status"
                     cx="50%"
@@ -318,27 +325,27 @@ export default function DashboardPage() {
 
       {/* Heatmap + Upcoming Hearings */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Panel title="Division x Status" className="lg:col-span-2">
+        <Panel title={t('dashboard.panel.division_status')} className="lg:col-span-2">
           {divisions.length === 0 ? (
-            <EmptyState text="No cases yet" />
+            <EmptyState text={t('dashboard.empty.no_cases')} />
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr>
                     <th className="px-2 py-2 text-left text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
-                      Division
+                      {t('dashboard.col.division')}
                     </th>
                     {ALL_STATUSES.map((s) => (
                       <th
                         key={s}
                         className="px-2 py-2 text-right text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]"
                       >
-                        {s}
+                        {tStatus(locale, s)}
                       </th>
                     ))}
                     <th className="px-2 py-2 text-right text-[10px] uppercase tracking-wider text-[rgb(var(--color-muted))]">
-                      Total
+                      {t('dashboard.col.total')}
                     </th>
                   </tr>
                 </thead>
@@ -379,9 +386,9 @@ export default function DashboardPage() {
           )}
         </Panel>
 
-        <Panel title="Upcoming Hearings (next 30 days)">
+        <Panel title={t('dashboard.panel.upcoming_hearings')}>
           {upcoming.length === 0 ? (
-            <EmptyState text="No hearings scheduled" />
+            <EmptyState text={t('dashboard.empty.no_hearings')} />
           ) : (
             <ul className="space-y-2">
               {upcoming.map((h, i) => (
@@ -392,7 +399,7 @@ export default function DashboardPage() {
                   >
                     <div className="flex h-9 w-12 flex-col items-center justify-center rounded-md bg-pug-gold-500/20 text-center text-pug-gold-700 dark:text-pug-gold-300">
                       <div className="text-[9px] uppercase leading-none">
-                        in {h.days_until}d
+                        {t('dashboard.in_days').replace('{n}', String(h.days_until))}
                       </div>
                       <CalendarClock className="h-3 w-3" />
                     </div>
@@ -415,10 +422,10 @@ export default function DashboardPage() {
       </div>
 
       {/* Status bar chart */}
-      <Panel title="Status (count)">
+      <Panel title={t('dashboard.panel.status_count')}>
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={statusCounts}>
+            <BarChart data={statusCounts.map((s) => ({ ...s, status: tStatus(locale, s.status) }))}>
               <CartesianGrid stroke="rgb(var(--color-border))" strokeDasharray="3 3" />
               <XAxis dataKey="status" tick={{ fontSize: 10 }} stroke="rgb(var(--color-muted))" />
               <YAxis tick={{ fontSize: 11 }} stroke="rgb(var(--color-muted))" allowDecimals={false} />

@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Arabic webfont. Loaded from Google Fonts; the agent proxy
+ * caches it so first paint isn't blocked. Latin fallback first
+ * so English screens stay on Inter. */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700&display=swap');
+
 @layer base {
   :root {
     --color-bg: 247 248 252;
@@ -27,6 +32,80 @@
     background-color: rgb(var(--color-card));
     color: rgb(var(--color-fg));
   }
+  /* Use Noto Sans Arabic for the whole UI when Arabic is active.
+   * The font covers Latin too, so numerals and case codes still
+   * render correctly. */
+  html[lang='ar'],
+  html[lang='ar'] body {
+    font-family: 'Noto Sans Arabic', 'Inter', 'Segoe UI', 'Tahoma', sans-serif;
+  }
+}
+
+/* ---- RTL overrides ----
+ *
+ * Tailwind 3.x ships physical utilities (ml-*, mr-*, left-*, etc.)
+ * not logical ones. Rather than installing tailwindcss-rtl and
+ * re-running PostCSS, we flip the worst offenders here so an
+ * Arabic user sees a mirrored layout without us touching every
+ * component. Logical CSS rules respect the document direction
+ * automatically. Anything page-specific can still override with
+ * `[dir="rtl"]` selectors. */
+[dir='rtl'] body {
+  text-align: right;
+}
+/* Sidebar lives on the right in RTL */
+[dir='rtl'] aside.sticky {
+  border-right: 0;
+  border-left: 1px solid rgb(var(--color-border));
+}
+/* Mirror margin / padding direction utilities so existing
+ * className strings (ml-2, mr-1, pl-7, pr-2) flip naturally. */
+[dir='rtl'] .ml-1 { margin-left: 0; margin-right: 0.25rem; }
+[dir='rtl'] .ml-2 { margin-left: 0; margin-right: 0.5rem; }
+[dir='rtl'] .ml-3 { margin-left: 0; margin-right: 0.75rem; }
+[dir='rtl'] .mr-1 { margin-right: 0; margin-left: 0.25rem; }
+[dir='rtl'] .mr-1\.5 { margin-right: 0; margin-left: 0.375rem; }
+[dir='rtl'] .mr-2 { margin-right: 0; margin-left: 0.5rem; }
+[dir='rtl'] .mr-3 { margin-right: 0; margin-left: 0.75rem; }
+[dir='rtl'] .pl-2 { padding-left: 0; padding-right: 0.5rem; }
+[dir='rtl'] .pl-3 { padding-left: 0; padding-right: 0.75rem; }
+[dir='rtl'] .pl-4 { padding-left: 0; padding-right: 1rem; }
+[dir='rtl'] .pl-7 { padding-left: 0; padding-right: 1.75rem; }
+[dir='rtl'] .pr-1 { padding-right: 0; padding-left: 0.25rem; }
+[dir='rtl'] .pr-2 { padding-right: 0; padding-left: 0.5rem; }
+[dir='rtl'] .pr-3 { padding-right: 0; padding-left: 0.75rem; }
+[dir='rtl'] .pr-4 { padding-right: 0; padding-left: 1rem; }
+[dir='rtl'] .left-0 { left: auto; right: 0; }
+[dir='rtl'] .left-2 { left: auto; right: 0.5rem; }
+[dir='rtl'] .left-full { left: auto; right: 100%; }
+[dir='rtl'] .right-0 { right: auto; left: 0; }
+[dir='rtl'] .right-2 { right: auto; left: 0.5rem; }
+[dir='rtl'] .text-left { text-align: right; }
+[dir='rtl'] .text-right { text-align: left; }
+[dir='rtl'] .border-l { border-left: 0; border-right-width: 1px; }
+[dir='rtl'] .border-r { border-right: 0; border-left-width: 1px; }
+[dir='rtl'] .border-l-2 { border-left-width: 0; border-right-width: 2px; }
+[dir='rtl'] .border-r-2 { border-right-width: 0; border-left-width: 2px; }
+/* Flex row icons should sit on the trailing side; reverse the
+ * row so the icon flips with the text. We scope this to the
+ * common nav-link / button shapes that pair icon + label. */
+[dir='rtl'] nav a,
+[dir='rtl'] nav button,
+[dir='rtl'] header a,
+[dir='rtl'] header button {
+  flex-direction: row-reverse;
+}
+/* Chevrons in dropdown toggles point the other way */
+[dir='rtl'] .lucide-chevron-right { transform: scaleX(-1); }
+[dir='rtl'] .lucide-chevron-left { transform: scaleX(-1); }
+/* Numerals stay LTR even inside an RTL paragraph so amounts,
+ * case numbers, and dates aren't mangled. */
+[dir='rtl'] .tabular-nums,
+[dir='rtl'] .font-mono,
+[dir='rtl'] input[type='number'],
+[dir='rtl'] input[type='date'] {
+  direction: ltr;
+  text-align: right;
 }
 
 /* ---- Print-optimised view (used by Ctrl+P on any page) ---- */

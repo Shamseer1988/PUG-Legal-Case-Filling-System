@@ -33,7 +33,7 @@ import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/lib/auth';
 import { API_BASE } from '@/lib/api';
 import { MENU, useCapabilitiesStore } from '@/lib/capabilities';
-import { useT } from '@/lib/i18n';
+import { useT, useLocale, tRole } from '@/lib/i18n';
 
 
 type Item = {
@@ -79,28 +79,28 @@ const GROUPS: Group[] = [
     title: 'Masters',
     i18nKey: 'sidebar.masters',
     items: [
-      { href: '/masters/divisions', label: 'Divisions', icon: Building2, menuId: MENU.MASTERS_DIVISIONS },
-      { href: '/masters/banks', label: 'Banks', icon: Landmark, menuId: MENU.MASTERS_BANKS },
-      { href: '/masters/customers', label: 'Customers', icon: UserSquare2, menuId: MENU.MASTERS_CUSTOMERS },
-      { href: '/masters/salesmen', label: 'Salesmen', icon: Users, menuId: MENU.MASTERS_SALESMEN },
-      { href: '/masters/lawyers', label: 'Lawyers', icon: Scale, menuId: MENU.MASTERS_LAWYERS },
-      { href: '/masters/case-types', label: 'Case Types', icon: Tag, menuId: MENU.MASTERS_CASE_TYPES },
-      { href: '/masters/document-locations', label: 'Document Locations', icon: HardDrive, menuId: MENU.MASTERS_DOCUMENT_LOCATIONS },
+      { href: '/masters/divisions', label: 'Divisions', i18nKey: 'sidebar.masters.divisions', icon: Building2, menuId: MENU.MASTERS_DIVISIONS },
+      { href: '/masters/banks', label: 'Banks', i18nKey: 'sidebar.masters.banks', icon: Landmark, menuId: MENU.MASTERS_BANKS },
+      { href: '/masters/customers', label: 'Customers', i18nKey: 'sidebar.masters.customers', icon: UserSquare2, menuId: MENU.MASTERS_CUSTOMERS },
+      { href: '/masters/salesmen', label: 'Salesmen', i18nKey: 'sidebar.masters.salesmen', icon: Users, menuId: MENU.MASTERS_SALESMEN },
+      { href: '/masters/lawyers', label: 'Lawyers', i18nKey: 'sidebar.masters.lawyers', icon: Scale, menuId: MENU.MASTERS_LAWYERS },
+      { href: '/masters/case-types', label: 'Case Types', i18nKey: 'sidebar.masters.case_types', icon: Tag, menuId: MENU.MASTERS_CASE_TYPES },
+      { href: '/masters/document-locations', label: 'Document Locations', i18nKey: 'sidebar.masters.document_locations', icon: HardDrive, menuId: MENU.MASTERS_DOCUMENT_LOCATIONS },
     ],
   },
   {
     title: 'Admin',
     i18nKey: 'sidebar.admin',
     items: [
-      { href: '/admin/users', label: 'Users', icon: Users, menuId: MENU.ADMIN_USERS },
-      { href: '/admin/roles', label: 'Roles & Permissions', icon: ShieldCheck, menuId: MENU.ADMIN_ROLES },
-      { href: '/admin/email-log', label: 'Email Log', icon: Mail, menuId: MENU.ADMIN_EMAIL_LOG },
-      { href: '/admin/audit-log', label: 'Audit Log', icon: ShieldCheck, menuId: MENU.ADMIN_AUDIT_LOG },
-      { href: '/admin/backups', label: 'Backup & Restore', icon: HardDrive, menuId: MENU.ADMIN_BACKUPS },
-      { href: '/admin/settings', label: 'System Settings', icon: Settings, menuId: MENU.ADMIN_SETTINGS },
-      { href: '/admin/diagnostics', label: 'Health & Diagnostics', icon: Activity, menuId: MENU.ADMIN_DIAGNOSTICS },
-      { href: '/admin/jobs', label: 'Job Monitor', icon: CalendarClock, menuId: MENU.ADMIN_JOBS },
-      { href: '/admin/bulk-reassign', label: 'Bulk Reassignment', icon: ArrowRightLeft, menuId: MENU.ADMIN_BULK_REASSIGN },
+      { href: '/admin/users', label: 'Users', i18nKey: 'sidebar.admin.users', icon: Users, menuId: MENU.ADMIN_USERS },
+      { href: '/admin/roles', label: 'Roles & Permissions', i18nKey: 'sidebar.admin.roles', icon: ShieldCheck, menuId: MENU.ADMIN_ROLES },
+      { href: '/admin/email-log', label: 'Email Log', i18nKey: 'sidebar.admin.email_log', icon: Mail, menuId: MENU.ADMIN_EMAIL_LOG },
+      { href: '/admin/audit-log', label: 'Audit Log', i18nKey: 'sidebar.admin.audit_log', icon: ShieldCheck, menuId: MENU.ADMIN_AUDIT_LOG },
+      { href: '/admin/backups', label: 'Backup & Restore', i18nKey: 'sidebar.admin.backups', icon: HardDrive, menuId: MENU.ADMIN_BACKUPS },
+      { href: '/admin/settings', label: 'System Settings', i18nKey: 'sidebar.admin.settings', icon: Settings, menuId: MENU.ADMIN_SETTINGS },
+      { href: '/admin/diagnostics', label: 'Health & Diagnostics', i18nKey: 'sidebar.admin.diagnostics', icon: Activity, menuId: MENU.ADMIN_DIAGNOSTICS },
+      { href: '/admin/jobs', label: 'Job Monitor', i18nKey: 'sidebar.admin.jobs', icon: CalendarClock, menuId: MENU.ADMIN_JOBS },
+      { href: '/admin/bulk-reassign', label: 'Bulk Reassignment', i18nKey: 'sidebar.admin.bulk_reassign', icon: ArrowRightLeft, menuId: MENU.ADMIN_BULK_REASSIGN },
     ],
   },
 ];
@@ -113,6 +113,7 @@ export function Sidebar() {
   const caps = useCapabilitiesStore((s) => s.caps);
   const clearCaps = useCapabilitiesStore((s) => s.clear);
   const t = useT();
+  const locale = useLocale();
 
   const [logoErr, setLogoErr] = useState(false);
 
@@ -182,7 +183,7 @@ export function Sidebar() {
             'flex shrink-0 items-center justify-center rounded-md text-[rgb(var(--color-muted))] transition-all duration-300 hover:bg-[rgb(var(--color-border))]/50 hover:text-[rgb(var(--color-fg))]',
             collapsed ? 'h-6 w-6' : 'h-7 w-7',
           )}
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
         >
           {collapsed ? (
             <ChevronRight className="h-4 w-4" />
@@ -309,10 +310,10 @@ export function Sidebar() {
             >
               <div className="truncate text-xs font-semibold">{me.full_name}</div>
               <div className="flex items-center gap-1 text-[10px] text-[rgb(var(--color-muted))]">
-                <span className="truncate">{me.role}</span>
+                <span className="truncate">{tRole(locale, me.role)}</span>
                 {me.is_super && (
                   <span className="shrink-0 rounded-full bg-pug-gold-500/20 px-1.5 py-0 text-[9px] font-bold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-300">
-                    Super
+                    {t('sidebar.super')}
                   </span>
                 )}
               </div>
