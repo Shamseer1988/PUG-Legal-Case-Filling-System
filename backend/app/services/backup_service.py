@@ -558,6 +558,7 @@ def _restore_pgdump_backup(
             notes=f"Pre-restore of #{job.id}",
         )
     safety_id = safety.id if safety else None
+    safety_file_name = safety.storage_path if safety else None
     backup_id = job.id
     file_name = job.storage_path
 
@@ -589,13 +590,26 @@ def _restore_pgdump_backup(
             # snapshot) won't be listed.
             sync_disk_files(db2)
 
+            # Resolve the new auto-increment IDs in the restored DB for the
+            # current backup job and safety snapshot by their unique filenames.
+            resolved_backup_id = backup_id
+            b_job = db2.query(BackupJob).filter(BackupJob.storage_path == file_name).first()
+            if b_job:
+                resolved_backup_id = b_job.id
+
+            resolved_safety_id = None
+            if safety_file_name:
+                s_job = db2.query(BackupJob).filter(BackupJob.storage_path == safety_file_name).first()
+                if s_job:
+                    resolved_safety_id = s_job.id
+
             # The BackupJob row for the snapshot we just restored may
             # exist under a different id after restore (the dump's row
             # set replaced ours). Re-record the restore against the
             # current backup_jobs table so the audit trail continues.
             rj = RestoreJob(
-                backup_id=backup_id,
-                safety_snapshot_id=safety_id,
+                backup_id=resolved_backup_id,
+                safety_snapshot_id=resolved_safety_id,
                 status=JOB_STATUS_COMPLETED,
                 started_at=started_at,
                 finished_at=_utcnow(),
@@ -612,7 +626,7 @@ def _restore_pgdump_backup(
                 file_name=file_name,
                 message="Restore completed.",
                 actor_user_id=user_id,
-                backup_job_id=backup_id,
+                backup_job_id=resolved_backup_id,
             )
             return rj
         finally:
@@ -622,9 +636,27 @@ def _restore_pgdump_backup(
 
         db2 = SessionLocal(expire_on_commit=False)
         try:
+            # Sync files first in case the dump was successfully loaded
+            # but something else failed.
+            try:
+                sync_disk_files(db2)
+            except Exception:
+                pass
+
+            resolved_backup_id = backup_id
+            b_job = db2.query(BackupJob).filter(BackupJob.storage_path == file_name).first()
+            if b_job:
+                resolved_backup_id = b_job.id
+
+            resolved_safety_id = None
+            if safety_file_name:
+                s_job = db2.query(BackupJob).filter(BackupJob.storage_path == safety_file_name).first()
+                if s_job:
+                    resolved_safety_id = s_job.id
+
             rj = RestoreJob(
-                backup_id=backup_id,
-                safety_snapshot_id=safety_id,
+                backup_id=resolved_backup_id,
+                safety_snapshot_id=resolved_safety_id,
                 status=JOB_STATUS_FAILED,
                 started_at=started_at,
                 finished_at=_utcnow(),
@@ -640,7 +672,7 @@ def _restore_pgdump_backup(
                 file_name=file_name,
                 message=str(e),
                 actor_user_id=user_id,
-                backup_job_id=backup_id,
+                backup_job_id=resolved_backup_id,
             )
         finally:
             db2.close()
@@ -973,6 +1005,44 @@ def _open_legacy_bundle(job: BackupJob) -> tarfile.TarFile:
     return tarfile.open(fileobj=io.BytesIO(blob), mode="r:gz")
 
 
+def _register_legacy_job_after_restore(
+    db: Session,
+    original_job_data: dict,
+    notes: str,
+) -> BackupJob:
+    """Re-register a legacy backup job in the database after a restore
+    if it is missing from the restored backup_jobs table.
+    """
+    storage_path = original_job_data.get("storage_path")
+    # Check if the file is already in the database
+    existing = db.query(BackupJob).filter(BackupJob.storage_path == storage_path).first()
+    if existing:
+        return existing
+
+    # Otherwise, recreate the record
+    new_job = BackupJob(
+        kind=original_job_data.get("kind"),
+        status=original_job_data.get("status"),
+        format=original_job_data.get("format"),
+        storage_path=storage_path,
+        sidecar_path=original_job_data.get("sidecar_path"),
+        cloud_path=original_job_data.get("cloud_path"),
+        size_bytes=original_job_data.get("size_bytes", 0),
+        checksum_sha256=original_job_data.get("checksum_sha256", ""),
+        is_encrypted=original_job_data.get("is_encrypted", False),
+        table_row_counts=original_job_data.get("table_row_counts", {}),
+        attachment_count=original_job_data.get("attachment_count", 0),
+        manifest=original_job_data.get("manifest", {}),
+        started_at=original_job_data.get("started_at"),
+        finished_at=original_job_data.get("finished_at"),
+        notes=notes,
+    )
+    db.add(new_job)
+    db.commit()
+    db.refresh(new_job)
+    return new_job
+
+
 def _restore_legacy_backup(
     db: Session,
     job: BackupJob,
@@ -992,12 +1062,31 @@ def _restore_legacy_backup(
     file_name = job.storage_path
     is_encrypted_flag = job.is_encrypted
 
+    # Extract original job fields to prevent DetachedInstanceError post-close
+    job_data = {
+        "kind": job.kind,
+        "status": job.status,
+        "format": job.format,
+        "storage_path": job.storage_path,
+        "sidecar_path": job.sidecar_path,
+        "cloud_path": job.cloud_path,
+        "size_bytes": job.size_bytes,
+        "checksum_sha256": job.checksum_sha256,
+        "is_encrypted": job.is_encrypted,
+        "table_row_counts": job.table_row_counts,
+        "attachment_count": job.attachment_count,
+        "manifest": job.manifest,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+    }
+
     # Hand back the FastAPI session before we touch the DB - any rows
     # still attached to it would otherwise stale-UPDATE after the wipe.
     db.commit()
     db.close()
 
     safety_id: int | None = None
+    safety_data: dict | None = None
     if take_safety_snapshot:
         snap_db = SessionLocal()
         try:
@@ -1013,6 +1102,22 @@ def _restore_legacy_backup(
                 notes=f"Pre-restore of #{job_id}",
             )
             safety_id = safety.id
+            safety_data = {
+                "kind": safety.kind,
+                "status": safety.status,
+                "format": safety.format,
+                "storage_path": safety.storage_path,
+                "sidecar_path": safety.sidecar_path,
+                "cloud_path": safety.cloud_path,
+                "size_bytes": safety.size_bytes,
+                "checksum_sha256": safety.checksum_sha256,
+                "is_encrypted": safety.is_encrypted,
+                "table_row_counts": safety.table_row_counts,
+                "attachment_count": safety.attachment_count,
+                "manifest": safety.manifest,
+                "started_at": safety.started_at,
+                "finished_at": safety.finished_at,
+            }
         finally:
             snap_db.close()
 
@@ -1102,9 +1207,22 @@ def _restore_legacy_backup(
         # be trusted to insert RestoreJob if it half-committed.
         fail_db = SessionLocal(expire_on_commit=False)
         try:
+            # Re-register original job and safety snapshot if missing
+            resolved_backup_job = _register_legacy_job_after_restore(
+                fail_db, job_data, "Re-registered legacy backup after failed restore."
+            )
+            resolved_backup_id = resolved_backup_job.id
+
+            resolved_safety_id = None
+            if safety_data:
+                resolved_safety_job = _register_legacy_job_after_restore(
+                    fail_db, safety_data, f"Pre-restore safety snapshot of #{job_id}"
+                )
+                resolved_safety_id = resolved_safety_job.id
+
             rj = RestoreJob(
-                backup_id=job_id,
-                safety_snapshot_id=safety_id,
+                backup_id=resolved_backup_id,
+                safety_snapshot_id=resolved_safety_id,
                 status=JOB_STATUS_FAILED,
                 started_at=started_at,
                 finished_at=_utcnow(),
@@ -1120,7 +1238,7 @@ def _restore_legacy_backup(
                 file_name=file_name,
                 message=str(e),
                 actor_user_id=user_id,
-                backup_job_id=job_id,
+                backup_job_id=resolved_backup_id,
             )
         finally:
             fail_db.close()
@@ -1133,9 +1251,22 @@ def _restore_legacy_backup(
     # it sees is the new DB image.
     ok_db = SessionLocal(expire_on_commit=False)
     try:
+        # Re-register original job and safety snapshot if missing
+        resolved_backup_job = _register_legacy_job_after_restore(
+            ok_db, job_data, "Re-registered legacy backup after restore."
+        )
+        resolved_backup_id = resolved_backup_job.id
+
+        resolved_safety_id = None
+        if safety_data:
+            resolved_safety_job = _register_legacy_job_after_restore(
+                ok_db, safety_data, f"Pre-restore safety snapshot of #{job_id}"
+            )
+            resolved_safety_id = resolved_safety_job.id
+
         rj = RestoreJob(
-            backup_id=job_id,
-            safety_snapshot_id=safety_id,
+            backup_id=resolved_backup_id,
+            safety_snapshot_id=resolved_safety_id,
             status=JOB_STATUS_COMPLETED,
             started_at=started_at,
             finished_at=_utcnow(),
@@ -1152,7 +1283,7 @@ def _restore_legacy_backup(
             file_name=file_name,
             message="Legacy restore completed.",
             actor_user_id=user_id,
-            backup_job_id=job_id,
+            backup_job_id=resolved_backup_id,
         )
         return rj
     finally:
