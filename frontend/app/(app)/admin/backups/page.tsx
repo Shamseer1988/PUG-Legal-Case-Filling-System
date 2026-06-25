@@ -3,10 +3,12 @@
 import {
   AlertTriangle,
   Archive,
+  CheckCircle2,
   Cloud,
   Database,
   Download,
   HardDrive,
+  Loader2,
   Plug,
   RefreshCw,
   Save,
@@ -14,8 +16,9 @@ import {
   Trash2,
   Undo2,
   Upload,
+  XCircle,
 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 
@@ -80,6 +83,12 @@ type BackupSettings = {
   cloud_folder: string;
 };
 
+type ToastMsg = {
+  id: number;
+  type: 'success' | 'error';
+  text: string;
+};
+
 const WEEKDAYS = [
   'Monday',
   'Tuesday',
@@ -93,6 +102,8 @@ const WEEKDAYS = [
 const inputCls =
   'w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm focus:border-pug-gold-500 focus:outline-none';
 
+let _toastId = 0;
+
 // --------------- page ---------------
 export default function BackupsPage() {
   const token = useAuthStore((s) => s.accessToken);
@@ -105,10 +116,36 @@ export default function BackupsPage() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+  const [toasts, setToasts] = useState<ToastMsg[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  // --- restore modal state ---
   const [restoreFor, setRestoreFor] = useState<{ job?: Job; r2Key?: string } | null>(null);
   const [confirmation, setConfirmation] = useState('');
   const [takeSnapshot, setTakeSnapshot] = useState(true);
-  const fileRef = useRef<HTMLInputElement>(null);
+
+  // --- upload-restore modal state ---
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadConfirmation, setUploadConfirmation] = useState('');
+  const [uploadTakeSnapshot, setUploadTakeSnapshot] = useState(true);
+
+  // --- delete confirm modal ---
+  const [deleteTarget, setDeleteTarget] = useState<Job | null>(null);
+
+  // --- loading overlay for long operations ---
+  const [loadingMsg, setLoadingMsg] = useState<string | null>(null);
+
+  const addToast = useCallback((type: 'success' | 'error', text: string) => {
+    const id = ++_toastId;
+    setToasts((prev) => [...prev, { id, type, text }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 8000);
+  }, []);
+
+  const dismissToast = useCallback((id: number) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   async function load() {
     setErr(null);
@@ -153,9 +190,9 @@ export default function BackupsPage() {
         body: settings,
       });
       setSettings(s);
-      setInfo('Backup settings saved.');
+      addToast('success', 'Backup settings saved.');
     } catch (e) {
-      setErr((e as ApiError).message);
+      addToast('error', (e as ApiError).message);
     } finally {
       setBusy(false);
     }
@@ -170,14 +207,15 @@ export default function BackupsPage() {
         method: 'POST',
         body: { notes: '', push_cloud: pushCloud },
       });
-      setInfo(
+      addToast(
+        'success',
         `Backup #${j.id} created (${formatBytes(j.size_bytes)})${
           pushCloud ? ' and pushed to cloud.' : '.'
         }`,
       );
       load();
     } catch (e) {
-      setErr((e as ApiError).message);
+      addToast('error', (e as ApiError).message);
     } finally {
       setBusy(false);
     }
@@ -197,38 +235,50 @@ export default function BackupsPage() {
   }
 
   async function downloadBackup(j: Job) {
-    const r = await fetch(`${API_BASE}/api/v1/backups/${j.id}/download`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-    });
-    if (!r.ok) {
-      setErr(`Download failed (${r.status})`);
-      return;
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/backups/${j.id}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!r.ok) {
+        addToast('error', `Download failed (${r.status})`);
+        return;
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = j.storage_path || `backup_${j.id}.dump`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      addToast('error', `Download error: ${e instanceof Error ? e.message : String(e)}`);
     }
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = j.storage_path;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
-  async function deleteBackup(j: Job) {
-    if (!confirm(`Delete backup file ${j.storage_path}? This cannot be undone.`)) return;
+  async function doDeleteBackup() {
+    if (!deleteTarget) return;
+    const target = deleteTarget;
+    setDeleteTarget(null);
+    setBusy(true);
+    setErr(null);
     try {
-      await api(`/api/v1/backups/${j.id}`, { method: 'DELETE' });
-      load();
+      await api(`/api/v1/backups/${target.id}`, { method: 'DELETE' });
+      addToast('success', `Backup "${target.storage_path || `#${target.id}`}" deleted.`);
+      await load();
     } catch (e) {
-      setErr((e as ApiError).message);
+      addToast('error', `Delete failed: ${(e as ApiError).message}`);
+    } finally {
+      setBusy(false);
     }
   }
 
   async function performRestore() {
     if (!restoreFor) return;
     if (confirmation !== 'RESTORE') {
-      setErr('Type RESTORE to confirm.');
+      addToast('error', 'Type RESTORE to confirm.');
       return;
     }
+    setLoadingMsg('Restoring database… This may take a moment.');
     setBusy(true);
     setErr(null);
     setInfo(null);
@@ -248,36 +298,34 @@ export default function BackupsPage() {
           body: { confirmation, take_safety_snapshot: takeSnapshot },
         });
       }
-      setInfo('Restore complete.');
+      addToast('success', '✅ Database restored successfully!');
       setRestoreFor(null);
       setConfirmation('');
-      load();
+      // Give the server a beat to settle, then reload everything.
+      await new Promise((r) => setTimeout(r, 1000));
+      await load();
     } catch (e) {
-      setErr((e as ApiError).message);
+      addToast('error', `Restore failed: ${(e as ApiError).message}`);
     } finally {
       setBusy(false);
+      setLoadingMsg(null);
     }
   }
 
-  async function uploadAndRestore(file: File) {
-    if (!confirm(
-      `Upload ${file.name} and restore the database from it? ` +
-        `A safety snapshot will be taken first. Type RESTORE in the confirmation modal next.`,
-    )) {
+  async function performUploadRestore() {
+    if (!uploadFile) return;
+    if (uploadConfirmation !== 'RESTORE') {
+      addToast('error', 'Type RESTORE to confirm.');
       return;
     }
-    const conf = prompt('Type RESTORE to confirm:');
-    if (conf !== 'RESTORE') {
-      setErr('Restore cancelled.');
-      return;
-    }
+    setLoadingMsg(`Uploading ${uploadFile.name} and restoring…`);
     setBusy(true);
     setErr(null);
     setInfo(null);
     try {
       const fd = new FormData();
-      fd.append('file', file);
-      const url = `${API_BASE}/api/v1/backups/upload-restore?confirmation=RESTORE&take_safety_snapshot=true`;
+      fd.append('file', uploadFile);
+      const url = `${API_BASE}/api/v1/backups/upload-restore?confirmation=RESTORE&take_safety_snapshot=${uploadTakeSnapshot}`;
       const r = await fetch(url, {
         method: 'POST',
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
@@ -287,18 +335,62 @@ export default function BackupsPage() {
       if (!r.ok) {
         throw new Error(body.detail || `Upload failed (${r.status})`);
       }
-      setInfo(`Restored from ${file.name}.`);
-      load();
+      addToast('success', `✅ Restored from ${uploadFile.name} successfully!`);
+      setUploadFile(null);
+      setUploadConfirmation('');
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await load();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      addToast('error', `Upload+Restore failed: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
+      setLoadingMsg(null);
       if (fileRef.current) fileRef.current.value = '';
     }
   }
 
   return (
     <div className="space-y-4">
+      {/* ---- Toast notifications ---- */}
+      {toasts.length > 0 && (
+        <div className="fixed right-4 top-4 z-[100] flex flex-col gap-2" style={{ maxWidth: '420px' }}>
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              className={
+                'flex items-start gap-2 rounded-lg border px-4 py-3 text-sm shadow-lg backdrop-blur-sm animate-in slide-in-from-right ' +
+                (t.type === 'success'
+                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-700 dark:text-emerald-200'
+                  : 'border-rose-500/40 bg-rose-500/15 text-rose-700 dark:text-rose-200')
+              }
+            >
+              {t.type === 'success' ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              ) : (
+                <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              )}
+              <span className="flex-1">{t.text}</span>
+              <button onClick={() => dismissToast(t.id)} className="shrink-0 opacity-60 hover:opacity-100">
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ---- Loading overlay ---- */}
+      {loadingMsg && (
+        <div className="fixed inset-0 z-[90] grid place-items-center bg-black/50 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-4 rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-8 shadow-2xl">
+            <Loader2 className="h-8 w-8 animate-spin text-pug-gold-500" />
+            <p className="text-sm font-semibold">{loadingMsg}</p>
+            <p className="text-xs text-[rgb(var(--color-muted))]">
+              Please do not close or refresh this page.
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Backup &amp; Restore</h1>
@@ -489,7 +581,8 @@ export default function BackupsPage() {
                     setRestoreFor({ r2Key: o.key });
                     setConfirmation('');
                   }}
-                  className="inline-flex items-center gap-1 rounded border border-pug-gold-500/40 bg-pug-gold-500/10 px-2 py-1 text-[11px] font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20"
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 rounded border border-pug-gold-500/40 bg-pug-gold-500/10 px-2 py-1 text-[11px] font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20 disabled:opacity-50"
                 >
                   <Undo2 className="h-3 w-3" /> Restore
                 </button>
@@ -511,7 +604,8 @@ export default function BackupsPage() {
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <button
             onClick={load}
-            className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-1.5 text-sm hover:bg-[rgb(var(--color-border))]/40"
+            disabled={busy}
+            className="flex items-center gap-2 rounded-md border border-[rgb(var(--color-border))] px-3 py-1.5 text-sm hover:bg-[rgb(var(--color-border))]/40 disabled:opacity-50"
           >
             <RefreshCw className="h-4 w-4" /> Refresh
           </button>
@@ -529,7 +623,12 @@ export default function BackupsPage() {
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
-              if (f) uploadAndRestore(f);
+              if (f) {
+                // Open the upload-restore modal instead of blocking dialogs
+                setUploadFile(f);
+                setUploadConfirmation('');
+                setUploadTakeSnapshot(true);
+              }
             }}
           />
           <button
@@ -585,7 +684,7 @@ export default function BackupsPage() {
           {rows.map((j) => (
             <tr key={j.id} className="border-t border-[rgb(var(--color-border))]">
               <td className="px-4 py-2 font-mono text-xs">
-                {j.storage_path}
+                {j.storage_path || <span className="italic text-[rgb(var(--color-muted))]">no file</span>}
                 {j.format === 'legacy_enc' && (
                   <span className="ml-2 rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 dark:text-amber-300">
                     LEGACY
@@ -604,7 +703,8 @@ export default function BackupsPage() {
               <td className="px-4 py-2 text-right">
                 <button
                   onClick={() => downloadBackup(j)}
-                  className="mr-1 inline-flex items-center gap-1 rounded border border-[rgb(var(--color-border))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--color-border))]/40"
+                  disabled={busy || !j.storage_path || j.size_bytes === 0}
+                  className="mr-1 inline-flex items-center gap-1 rounded border border-[rgb(var(--color-border))] px-2 py-1 text-[11px] hover:bg-[rgb(var(--color-border))]/40 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <Download className="h-3 w-3" /> Download
                 </button>
@@ -621,14 +721,16 @@ export default function BackupsPage() {
                       setRestoreFor({ job: j });
                       setConfirmation('');
                     }}
-                    className="mr-1 inline-flex items-center gap-1 rounded border border-pug-gold-500/40 bg-pug-gold-500/10 px-2 py-1 text-[11px] font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20"
+                    disabled={busy || !j.storage_path || j.size_bytes === 0}
+                    className="mr-1 inline-flex items-center gap-1 rounded border border-pug-gold-500/40 bg-pug-gold-500/10 px-2 py-1 text-[11px] font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     <Undo2 className="h-3 w-3" /> Restore
                   </button>
                 )}
                 <button
-                  onClick={() => deleteBackup(j)}
-                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-rose-600 hover:bg-rose-500/10"
+                  onClick={() => setDeleteTarget(j)}
+                  disabled={busy}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-rose-600 hover:bg-rose-500/10 disabled:opacity-40"
                 >
                   <Trash2 className="h-3 w-3" /> Delete
                 </button>
@@ -669,6 +771,7 @@ export default function BackupsPage() {
         </Table>
       </Card>
 
+      {/* ------ Restore Modal ------ */}
       {restoreFor && (
         <RestoreModal
           target={restoreFor}
@@ -682,6 +785,34 @@ export default function BackupsPage() {
             setConfirmation('');
           }}
           onConfirm={performRestore}
+        />
+      )}
+
+      {/* ------ Upload + Restore Modal ------ */}
+      {uploadFile && (
+        <UploadRestoreModal
+          file={uploadFile}
+          confirmation={uploadConfirmation}
+          setConfirmation={setUploadConfirmation}
+          takeSnapshot={uploadTakeSnapshot}
+          setTakeSnapshot={setUploadTakeSnapshot}
+          busy={busy}
+          onCancel={() => {
+            setUploadFile(null);
+            setUploadConfirmation('');
+            if (fileRef.current) fileRef.current.value = '';
+          }}
+          onConfirm={performUploadRestore}
+        />
+      )}
+
+      {/* ------ Delete Confirmation Modal ------ */}
+      {deleteTarget && (
+        <DeleteModal
+          job={deleteTarget}
+          busy={busy}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={doDeleteBackup}
         />
       )}
     </div>
@@ -905,7 +1036,125 @@ function RestoreModal({
             disabled={busy || confirmation !== 'RESTORE'}
             className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
           >
-            <Undo2 className="h-4 w-4" /> Restore Now
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+            {busy ? 'Restoring…' : 'Restore Now'}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md border border-[rgb(var(--color-border))] px-4 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UploadRestoreModal({
+  file,
+  confirmation,
+  setConfirmation,
+  takeSnapshot,
+  setTakeSnapshot,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  file: File;
+  confirmation: string;
+  setConfirmation: (v: string) => void;
+  takeSnapshot: boolean;
+  setTakeSnapshot: (v: boolean) => void;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+      <div className="w-full max-w-md rounded-xl border border-rose-500/40 bg-[rgb(var(--color-card))] p-6 shadow-2xl">
+        <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300">
+          <ShieldAlert className="h-5 w-5" />
+          <h2 className="text-lg font-bold">Upload &amp; Restore</h2>
+        </div>
+        <p className="mt-3 text-sm">
+          Upload <strong className="font-mono">{file.name}</strong> ({formatBytes(file.size)}) and{' '}
+          <strong>restore the database</strong> from it. This will wipe the current database.
+        </p>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={takeSnapshot}
+            onChange={(e) => setTakeSnapshot(e.target.checked)}
+            className="h-4 w-4"
+          />
+          Take a <strong>safety snapshot</strong> first (recommended)
+        </label>
+        <label className="mt-3 block text-sm">
+          <span className="mb-1 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--color-muted))]">
+            Type <code className="font-mono text-rose-600">RESTORE</code> to confirm
+          </span>
+          <input
+            autoFocus
+            value={confirmation}
+            onChange={(e) => setConfirmation(e.target.value)}
+            className="w-full rounded-md border border-rose-500/40 bg-transparent px-3 py-2 font-mono text-sm focus:border-rose-500 focus:outline-none"
+          />
+        </label>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onConfirm}
+            disabled={busy || confirmation !== 'RESTORE'}
+            className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+            {busy ? 'Uploading & Restoring…' : 'Upload & Restore'}
+          </button>
+          <button
+            onClick={onCancel}
+            disabled={busy}
+            className="rounded-md border border-[rgb(var(--color-border))] px-4 py-2 text-sm hover:bg-[rgb(var(--color-border))]/40"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteModal({
+  job,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  job: Job;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4">
+      <div className="w-full max-w-sm rounded-xl border border-rose-500/40 bg-[rgb(var(--color-card))] p-6 shadow-2xl">
+        <div className="flex items-center gap-2 text-rose-700 dark:text-rose-300">
+          <AlertTriangle className="h-5 w-5" />
+          <h2 className="text-lg font-bold">Delete Backup</h2>
+        </div>
+        <p className="mt-3 text-sm">
+          Delete backup file{' '}
+          <strong className="font-mono">{job.storage_path || `#${job.id}`}</strong>?
+          This cannot be undone.
+        </p>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={onConfirm}
+            disabled={busy}
+            className="flex items-center gap-2 rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+          >
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            {busy ? 'Deleting…' : 'Delete'}
           </button>
           <button
             onClick={onCancel}
