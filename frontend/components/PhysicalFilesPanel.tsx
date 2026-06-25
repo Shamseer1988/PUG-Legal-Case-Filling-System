@@ -3,28 +3,28 @@
 import {
   AlertTriangle,
   ArrowRightLeft,
+  Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   FileSignature,
   Plus,
   Save,
   Trash2,
   X,
+  XCircle,
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { useMasterOptions } from '@/lib/useMasters';
 
-/** Phase 41: per-case physical document chain of custody.
+/** Phase 41 + 45: per-case physical document chain of custody.
  *
- * Shows every PhysicalDocument registered on a case, who currently
- * holds each one, and the full handover log. Operators with
- * ``documents:transfer`` can register a new doc, transfer to a user
- * / location, retire a doc, and upload a recipient signature image.
- *
- * Visibility: rendered to anyone with ``documents:read`` (the panel
- * is mounted by CaseForm conditionally on that permission).
+ * Phase 45 adds a two-phase transfer flow: the sender initiates a transfer
+ * (status=pending), and the named recipient must explicitly Accept it before
+ * custody moves. Receiver can also Reject, which leaves custody with the sender.
+ * Recipient uploads a signed acknowledgment at acceptance time.
  */
 
 type CustodyLog = {
@@ -44,6 +44,12 @@ type CustodyLog = {
   to_user_name: string;
   location_name: string;
   recorded_by_name: string;
+  // Phase 45
+  transfer_status: string;
+  accepted_at: string | null;
+  ack_filename: string;
+  ack_size: number;
+  ack_mime: string;
 };
 
 type DocRow = {
@@ -60,6 +66,10 @@ type DocRow = {
   current_holder_name: string;
   current_location_name: string;
   case_no: string;
+  // Phase 45
+  pending_transfer_log_id: number | null;
+  pending_transfer_to_user_id: number | null;
+  pending_transfer_to_name: string;
 };
 
 type DocDetail = DocRow & { custody_log: CustodyLog[] };
@@ -87,9 +97,11 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [transferFor, setTransferFor] = useState<DocRow | null>(null);
+  const [acceptFor, setAcceptFor] = useState<DocRow | null>(null);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [details, setDetails] = useState<Record<number, DocDetail>>({});
 
+  const me = useAuthStore((s) => s.me);
   const locations = useMasterOptions('/api/v1/masters/document-locations', 'name');
 
   const reload = useCallback(async () => {
@@ -135,11 +147,37 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
     }
   }
 
+  async function reject(d: DocRow) {
+    if (!d.pending_transfer_log_id) return;
+    if (!confirm(`Reject the incoming transfer of "${d.label}"?`)) return;
+    try {
+      await api(`/api/v1/documents/transfers/${d.pending_transfer_log_id}/reject`, {
+        method: 'POST',
+        body: {},
+      });
+      reload();
+    } catch (e) {
+      setError((e as ApiError).message);
+    }
+  }
+
+  // Docs with a pending incoming transfer for the current user
+  const pendingForMe = rows.filter(
+    (d) =>
+      d.pending_transfer_log_id !== null &&
+      d.pending_transfer_to_user_id === me?.id,
+  );
+
   return (
     <section className="rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] p-5 shadow-soft">
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-pug-gold-700 dark:text-pug-gold-400">
           Physical Files
+          {pendingForMe.length > 0 && (
+            <span className="ml-2 rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+              {pendingForMe.length} pending
+            </span>
+          )}
         </h2>
         {canTransfer && !adding && (
           <button
@@ -167,6 +205,38 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
             reload();
           }}
         />
+      )}
+
+      {/* Incoming-transfer alert banner */}
+      {pendingForMe.length > 0 && (
+        <div className="mb-3 rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:bg-amber-900/20 dark:text-amber-200">
+          <div className="mb-1 font-semibold flex items-center gap-1.5">
+            <Clock className="h-4 w-4" /> Awaiting your acceptance ({pendingForMe.length})
+          </div>
+          <ul className="space-y-1 text-xs">
+            {pendingForMe.map((d) => (
+              <li key={d.id} className="flex items-center justify-between gap-3">
+                <span>
+                  <strong>{d.label}</strong> — transferred to you
+                </span>
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setAcceptFor(d)}
+                    className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-0.5 text-[10px] font-semibold text-white hover:bg-emerald-500"
+                  >
+                    <Check className="h-3 w-3" /> Accept
+                  </button>
+                  <button
+                    onClick={() => reject(d)}
+                    className="inline-flex items-center gap-1 rounded border border-rose-400/60 px-2 py-0.5 text-[10px] text-rose-700 hover:bg-rose-500/10"
+                  >
+                    <XCircle className="h-3 w-3" /> Reject
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {loading ? (
@@ -199,6 +269,12 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
               {rows.map((d) => {
                 const expanded = expandedId === d.id;
                 const detail = details[d.id];
+                const isPendingToMe =
+                  d.pending_transfer_log_id !== null &&
+                  d.pending_transfer_to_user_id === me?.id;
+                const isPendingToOther =
+                  d.pending_transfer_log_id !== null &&
+                  d.pending_transfer_to_user_id !== me?.id;
                 return (
                   <Fragment key={d.id}>
                     <tr
@@ -231,10 +307,22 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
                         {KIND_OPTIONS.find((k) => k.value === d.kind)?.label ?? d.kind}
                       </td>
                       <td className="px-3 py-2">
-                        {d.current_holder_name || (
-                          <span className="text-xs text-[rgb(var(--color-muted))]">
-                            {d.current_location_name ? '(in storage)' : '-'}
+                        {isPendingToMe ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            <Clock className="h-3 w-3" /> Pending — accept from {d.current_holder_name || 'sender'}
                           </span>
+                        ) : isPendingToOther ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400">
+                            <Clock className="h-3 w-3" />
+                            {d.current_holder_name || '—'}{' '}
+                            <span className="opacity-70">→ pending to {d.pending_transfer_to_name}</span>
+                          </span>
+                        ) : (
+                          d.current_holder_name || (
+                            <span className="text-xs text-[rgb(var(--color-muted))]">
+                              {d.current_location_name ? '(in storage)' : '-'}
+                            </span>
+                          )
                         )}
                       </td>
                       <td className="px-3 py-2">
@@ -249,18 +337,41 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
                         <td className="px-3 py-2 text-right">
                           {d.is_active && (
                             <>
-                              <button
-                                onClick={() => setTransferFor(d)}
-                                className="mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
-                              >
-                                <ArrowRightLeft className="h-3 w-3" /> Transfer
-                              </button>
-                              <button
-                                onClick={() => retire(d)}
-                                className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-rose-600 hover:bg-rose-500/10"
-                              >
-                                <Trash2 className="h-3 w-3" /> Retire
-                              </button>
+                              {isPendingToMe ? (
+                                <>
+                                  <button
+                                    onClick={() => setAcceptFor(d)}
+                                    className="mr-2 inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
+                                  >
+                                    <Check className="h-3 w-3" /> Accept
+                                  </button>
+                                  <button
+                                    onClick={() => reject(d)}
+                                    className="inline-flex items-center gap-1 rounded border border-rose-400/60 px-2 py-1 text-xs text-rose-700 hover:bg-rose-500/10"
+                                  >
+                                    <XCircle className="h-3 w-3" /> Reject
+                                  </button>
+                                </>
+                              ) : !isPendingToOther ? (
+                                <>
+                                  <button
+                                    onClick={() => setTransferFor(d)}
+                                    className="mr-2 inline-flex items-center gap-1 rounded px-2 py-1 text-xs hover:bg-[rgb(var(--color-border))]/40"
+                                  >
+                                    <ArrowRightLeft className="h-3 w-3" /> Transfer
+                                  </button>
+                                  <button
+                                    onClick={() => retire(d)}
+                                    className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-rose-600 hover:bg-rose-500/10"
+                                  >
+                                    <Trash2 className="h-3 w-3" /> Retire
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="text-[10px] text-[rgb(var(--color-muted))]">
+                                  Awaiting recipient
+                                </span>
+                              )}
                             </>
                           )}
                         </td>
@@ -288,10 +399,25 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
           onClose={() => setTransferFor(null)}
           onSaved={() => {
             setTransferFor(null);
-            // Clear cached detail so the next expand re-fetches.
             setDetails((prev) => {
               const next = { ...prev };
               delete next[transferFor.id];
+              return next;
+            });
+            reload();
+          }}
+        />
+      )}
+
+      {acceptFor && (
+        <AcceptModal
+          doc={acceptFor}
+          onClose={() => setAcceptFor(null)}
+          onSaved={() => {
+            setAcceptFor(null);
+            setDetails((prev) => {
+              const next = { ...prev };
+              delete next[acceptFor.id];
               return next;
             });
             reload();
@@ -465,9 +591,6 @@ function TransferModal({
   const token = useAuthStore((s) => s.accessToken);
 
   useEffect(() => {
-    // Pull every active user as a potential recipient. The roster
-    // is intentionally not role-filtered: a physical file may need
-    // to land on anyone's desk.
     api<UserOption[]>('/api/v1/users/options')
       .then(setUsers)
       .catch(() => setUsers([]));
@@ -521,6 +644,8 @@ function TransferModal({
     }
   }
 
+  const recipientIsUser = draft.to_user_id != null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-xl rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] shadow-2xl">
@@ -555,6 +680,16 @@ function TransferModal({
             </strong>
             .
           </div>
+
+          {recipientIsUser && (
+            <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-400/40 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
+              <Clock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                Transfers to a named user require their acceptance before custody moves.
+                They will see an &quot;Accept&quot; prompt when they open this case.
+              </span>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 gap-3">
             <Field label="Transfer to user">
@@ -612,24 +747,25 @@ function TransferModal({
                 placeholder="What's being handed over, why, expected return..."
               />
             </Field>
-            <Field label="Optional receipt / signature (photo)">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => setSignature(e.target.files?.[0] ?? null)}
-                className={inputCls}
-              />
-              {signature && (
+            {!recipientIsUser && (
+              <Field label="Optional receipt / signature (photo)">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setSignature(e.target.files?.[0] ?? null)}
+                  className={inputCls}
+                />
+                {signature && (
+                  <div className="mt-1 text-[10px] text-[rgb(var(--color-muted))]">
+                    Will upload: {signature.name}
+                  </div>
+                )}
                 <div className="mt-1 text-[10px] text-[rgb(var(--color-muted))]">
-                  Will upload: {signature.name}
+                  For location-only transfers. When sending to a user, they upload
+                  the signed acknowledgment when accepting.
                 </div>
-              )}
-              <div className="mt-1 text-[10px] text-[rgb(var(--color-muted))]">
-                Attach a photo of the signed handover slip or recipient
-                signature. Required to file the case in court if the lawyer
-                later disputes receipt.
-              </div>
-            </Field>
+              </Field>
+            )}
           </div>
         </div>
 
@@ -645,7 +781,132 @@ function TransferModal({
             disabled={busy}
             className="flex items-center gap-2 rounded-md bg-pug-navy-700 px-3 py-1.5 text-sm font-semibold text-white hover:bg-pug-navy-600 disabled:opacity-50"
           >
-            <Save className="h-4 w-4" /> Record Transfer
+            <Save className="h-4 w-4" />
+            {recipientIsUser ? 'Send Transfer Request' : 'Record Transfer'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AcceptModal({
+  doc,
+  onClose,
+  onSaved,
+}: {
+  doc: DocRow;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [note, setNote] = useState('');
+  const [ackFile, setAckFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const token = useAuthStore((s) => s.accessToken);
+
+  async function accept() {
+    if (!doc.pending_transfer_log_id) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await api(`/api/v1/documents/transfers/${doc.pending_transfer_log_id}/accept`, {
+        method: 'POST',
+        body: { note },
+      });
+      if (ackFile) {
+        const fd = new FormData();
+        fd.append('file', ackFile);
+        const res = await fetch(
+          `${API_BASE}/api/v1/documents/transfers/${doc.pending_transfer_log_id}/acknowledgment`,
+          {
+            method: 'POST',
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+            body: fd,
+          },
+        );
+        if (!res.ok) throw new Error(await res.text());
+      }
+      onSaved();
+    } catch (e) {
+      setErr((e as ApiError).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="w-full max-w-lg rounded-xl border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[rgb(var(--color-border))] px-5 py-3">
+          <h3 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+            <Check className="h-4 w-4" /> Accept Transfer — {doc.label}
+          </h3>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1 text-[rgb(var(--color-muted))] hover:bg-[rgb(var(--color-border))]/40"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="px-5 py-4">
+          {err && (
+            <div className="mb-3 flex items-start gap-2 rounded-md border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-sm text-rose-700">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <div>{err}</div>
+            </div>
+          )}
+
+          <p className="mb-4 text-sm text-[rgb(var(--color-text))]">
+            You are confirming receipt of{' '}
+            <strong>&quot;{doc.label}&quot;</strong>. Accepting this transfer will
+            move the file&apos;s custody to you in the system.
+          </p>
+
+          <div className="space-y-3">
+            <Field label="Acceptance note (optional)">
+              <textarea
+                rows={2}
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                className={inputCls}
+                placeholder="Any remarks about the handover condition..."
+              />
+            </Field>
+            <Field label="Signed acknowledgment (upload)">
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => setAckFile(e.target.files?.[0] ?? null)}
+                className={inputCls}
+              />
+              {ackFile && (
+                <div className="mt-1 text-[10px] text-[rgb(var(--color-muted))]">
+                  Will upload: {ackFile.name}
+                </div>
+              )}
+              <div className="mt-1 text-[10px] text-[rgb(var(--color-muted))]">
+                Upload a photo or scan of the signed handover slip. This serves as
+                your acknowledgment of receipt and is required for court filings.
+              </div>
+            </Field>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-end gap-2 border-t border-[rgb(var(--color-border))] px-5 py-3">
+          <button
+            onClick={onClose}
+            className="rounded-md border border-[rgb(var(--color-border))] px-3 py-1.5 text-sm hover:bg-[rgb(var(--color-border))]/40"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={accept}
+            disabled={busy}
+            className="flex items-center gap-2 rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+          >
+            <Check className="h-4 w-4" /> Confirm Receipt
           </button>
         </div>
       </div>
@@ -655,22 +916,20 @@ function TransferModal({
 
 function CustodyTimeline({ log }: { log: CustodyLog[] }) {
   const token = useAuthStore((s) => s.accessToken);
-  // Newest first - the backend already orders this way.
   const ordered = useMemo(() => log, [log]);
 
-  async function openSignature(l: CustodyLog) {
-    const res = await fetch(
-      `${API_BASE}/api/v1/documents/transfers/${l.id}/signature`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} },
-    );
+  async function openFile(url: string) {
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
     if (!res.ok) {
-      alert('Could not load signature.');
+      alert('Could not load file.');
       return;
     }
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank', 'noopener');
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    const objectUrl = URL.createObjectURL(blob);
+    window.open(objectUrl, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
   }
 
   return (
@@ -679,49 +938,90 @@ function CustodyTimeline({ log }: { log: CustodyLog[] }) {
         Chain of custody ({ordered.length} entr{ordered.length === 1 ? 'y' : 'ies'})
       </div>
       <ol className="space-y-2">
-        {ordered.map((l) => (
-          <li
-            key={l.id}
-            className="rounded-md border border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))] px-3 py-2 text-xs"
-          >
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <div>
-                <strong>
-                  {l.from_user_name || '—'} → {l.to_user_name || '(storage)'}
-                </strong>
-                {l.location_name && (
-                  <span className="ml-2 text-[rgb(var(--color-muted))]">
-                    @ {l.location_name}
-                  </span>
+        {ordered.map((l) => {
+          const isPending = l.transfer_status === 'pending';
+          const isRejected = l.transfer_status === 'rejected';
+          return (
+            <li
+              key={l.id}
+              className={`rounded-md border px-3 py-2 text-xs ${
+                isPending
+                  ? 'border-amber-400/60 bg-amber-50 dark:bg-amber-900/20'
+                  : isRejected
+                  ? 'border-rose-400/40 bg-rose-50/50 opacity-60 dark:bg-rose-900/10'
+                  : 'border-[rgb(var(--color-border))] bg-[rgb(var(--color-card))]'
+              }`}
+            >
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <div>
+                  <strong>
+                    {l.from_user_name || '—'} → {l.to_user_name || '(storage)'}
+                  </strong>
+                  {l.location_name && (
+                    <span className="ml-2 text-[rgb(var(--color-muted))]">
+                      @ {l.location_name}
+                    </span>
+                  )}
+                  {l.location_text && !l.location_name && (
+                    <span className="ml-2 text-[rgb(var(--color-muted))]">
+                      @ {l.location_text}
+                    </span>
+                  )}
+                  {isPending && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                      <Clock className="h-2.5 w-2.5" /> PENDING
+                    </span>
+                  )}
+                  {isRejected && (
+                    <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-rose-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+                      REJECTED
+                    </span>
+                  )}
+                </div>
+                <div className="text-[10px] text-[rgb(var(--color-muted))]">
+                  {new Date(l.transferred_at).toLocaleString()}
+                  {l.accepted_at && (
+                    <span className="ml-1 text-emerald-600 dark:text-emerald-400">
+                      · accepted {new Date(l.accepted_at).toLocaleString()}
+                    </span>
+                  )}
+                  {l.recorded_by_name && (
+                    <span> · recorded by {l.recorded_by_name}</span>
+                  )}
+                </div>
+              </div>
+              {l.note && (
+                <div className="mt-1 whitespace-pre-wrap text-[rgb(var(--color-text))]">
+                  {l.note}
+                </div>
+              )}
+              <div className="mt-1 flex flex-wrap gap-2">
+                {l.signature_filename && (
+                  <button
+                    onClick={() =>
+                      openFile(`${API_BASE}/api/v1/documents/transfers/${l.id}/signature`)
+                    }
+                    className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] hover:bg-[rgb(var(--color-border))]/40"
+                  >
+                    <FileSignature className="h-3 w-3" /> View sender receipt
+                  </button>
                 )}
-                {l.location_text && !l.location_name && (
-                  <span className="ml-2 text-[rgb(var(--color-muted))]">
-                    @ {l.location_text}
-                  </span>
+                {l.ack_filename && (
+                  <button
+                    onClick={() =>
+                      openFile(
+                        `${API_BASE}/api/v1/documents/transfers/${l.id}/acknowledgment`,
+                      )
+                    }
+                    className="inline-flex items-center gap-1 rounded bg-emerald-600/10 px-2 py-0.5 text-[10px] text-emerald-700 hover:bg-emerald-600/20 dark:text-emerald-400"
+                  >
+                    <Check className="h-3 w-3" /> View signed acknowledgment
+                  </button>
                 )}
               </div>
-              <div className="text-[10px] text-[rgb(var(--color-muted))]">
-                {new Date(l.transferred_at).toLocaleString()}
-                {l.recorded_by_name && (
-                  <span> · recorded by {l.recorded_by_name}</span>
-                )}
-              </div>
-            </div>
-            {l.note && (
-              <div className="mt-1 whitespace-pre-wrap text-[rgb(var(--color-text))]">
-                {l.note}
-              </div>
-            )}
-            {l.signature_filename && (
-              <button
-                onClick={() => openSignature(l)}
-                className="mt-1 inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] hover:bg-[rgb(var(--color-border))]/40"
-              >
-                <FileSignature className="h-3 w-3" /> View receipt / signature
-              </button>
-            )}
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ol>
     </div>
   );

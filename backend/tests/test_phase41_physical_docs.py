@@ -256,7 +256,7 @@ def test_transfer_appends_log_and_snapshots(client) -> None:
     ).json()
     assert len(doc["custody_log"]) == 1
 
-    # Hand off to a lawyer-type user.
+    # Hand off to a lawyer-type user (Phase 45: requires their acceptance).
     lawyer = _make_user_with_role(c, h, role_name="Lawyer", email="phys-lawyer@x.com")
     transfer = c.post(
         f"/api/v1/documents/{doc['id']}/transfer",
@@ -268,15 +268,31 @@ def test_transfer_appends_log_and_snapshots(client) -> None:
     )
     assert transfer.status_code == 200, transfer.text
     after = transfer.json()
-    assert after["current_holder_user_id"] == lawyer["id"]
-    assert after["current_holder_name"] == lawyer["full_name"]
-    assert after["current_location_id"] is None
+    # Phase 45: custody does NOT move until lawyer accepts.
+    assert after["current_holder_user_id"] != lawyer["id"]
+    assert after["pending_transfer_to_user_id"] == lawyer["id"]
+    pending_log_id = after["pending_transfer_log_id"]
+    assert pending_log_id is not None
+    # The new log entry is already in the log (status=pending).
     assert len(after["custody_log"]) == 2
-    # Log rows ordered newest-first.
     newest = after["custody_log"][0]
-    assert newest["from_user_id"] is None  # storage row had no holder
     assert newest["to_user_id"] == lawyer["id"]
     assert newest["note"] == "Filing tomorrow at court"
+    assert newest["transfer_status"] == "pending"
+
+    # Lawyer accepts → custody moves.
+    lawyer_h = _login(c, "phys-lawyer@x.com")
+    accepted = c.post(
+        f"/api/v1/documents/transfers/{pending_log_id}/accept",
+        headers=lawyer_h,
+        json={},
+    )
+    assert accepted.status_code == 200, accepted.text
+    final = accepted.json()
+    assert final["current_holder_user_id"] == lawyer["id"]
+    assert final["current_holder_name"] == lawyer["full_name"]
+    assert final["current_location_id"] is None
+    assert final["pending_transfer_log_id"] is None
 
 
 def test_transfer_rejects_empty_destination(client) -> None:
@@ -335,16 +351,25 @@ def test_files_with_me_only_returns_active_holdings(client) -> None:
         headers=h_admin,
         json={"label": "Doc-A"},
     ).json()
-    d2 = c.post(
+    d2 = c.post(  # noqa: F841
         f"/api/v1/cases/{case['id']}/documents",
         headers=h_admin,
         json={"label": "Doc-B"},
     ).json()
-    c.post(
+    transfer = c.post(
         f"/api/v1/documents/{d1['id']}/transfer",
         headers=h_admin,
         json={"to_user_id": accountant["id"]},
+    ).json()
+    # Phase 45: accountant must accept before the doc shows as "with-me".
+    log_id = transfer["pending_transfer_log_id"]
+    assert log_id is not None
+    acc_r = c.post(
+        f"/api/v1/documents/transfers/{log_id}/accept",
+        headers=h_acc,
+        json={},
     )
+    assert acc_r.status_code == 200, acc_r.text
 
     mine = c.get("/api/v1/documents/reports/with-me", headers=h_acc).json()
     labels = {row["label"] for row in mine}
@@ -383,11 +408,19 @@ def test_overdue_skips_documents_parked_in_storage(client) -> None:
         headers=h,
         json={"label": "Held"},
     ).json()
-    c.post(
+    transfer_r = c.post(
         f"/api/v1/documents/{held['id']}/transfer",
         headers=h,
         json={"to_user_id": accountant["id"]},
+    ).json()
+    # Phase 45: accountant must accept before the doc appears in the overdue report.
+    h_acc = _login(c, "phys-acc2@x.com")
+    acc_r = c.post(
+        f"/api/v1/documents/transfers/{transfer_r['pending_transfer_log_id']}/accept",
+        headers=h_acc,
+        json={},
     )
+    assert acc_r.status_code == 200, acc_r.text
 
     # Back-date the latest log + the snapshot directly via the DB
     # so we don't have to wait 8 real days for the report to fire.
@@ -620,11 +653,19 @@ def test_filing_blocked_until_folder_handed_to_lawyer(client) -> None:
     assert "physical case folder" in r1.json()["detail"].lower()
 
     # Hand the folder to the lawyer, then retry - should succeed.
-    c.post(
+    transfer2 = c.post(
         f"/api/v1/documents/{folder['id']}/transfer",
         headers=h,
         json={"to_user_id": lawyer["id"], "note": "For court filing"},
+    ).json()
+    # Phase 45: lawyer must accept before custody moves (and gate passes).
+    lawyer_h = _login(c, "phys-lawyer-gate@x.com")
+    acc2 = c.post(
+        f"/api/v1/documents/transfers/{transfer2['pending_transfer_log_id']}/accept",
+        headers=lawyer_h,
+        json={},
     )
+    assert acc2.status_code == 200, acc2.text
     r2 = c.post(
         f"/api/v1/cases/{case['id']}/court-filing",
         headers=h,
@@ -659,14 +700,22 @@ def test_closing_blocked_until_folder_back_in_storage(client) -> None:
     folder = docs[0]
     # Hand to the lawyer + park at a non-storage location so we can
     # actually reach Closed-attempt land.
-    c.post(
+    transfer_close = c.post(
         f"/api/v1/documents/{folder['id']}/transfer",
         headers=h,
         json={
             "to_user_id": lawyer["id"],
             "to_location_id": transient_loc["id"],
         },
+    ).json()
+    # Phase 45: lawyer accepts so custody moves (filing gate requires lawyer custody).
+    lawyer_h_close = _login(c, "phys-lawyer-close@x.com")
+    acc_close = c.post(
+        f"/api/v1/documents/transfers/{transfer_close['pending_transfer_log_id']}/accept",
+        headers=lawyer_h_close,
+        json={},
     )
+    assert acc_close.status_code == 200, acc_close.text
     c.post(
         f"/api/v1/cases/{case['id']}/court-filing",
         headers=h,

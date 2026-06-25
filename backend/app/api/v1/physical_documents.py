@@ -43,10 +43,12 @@ from app.models.user import User
 from app.schemas.physical_document import (
     CustodyLogRead,
     OverdueDocumentRow,
+    PendingIncomingRead,
     PhysicalDocumentCreate,
     PhysicalDocumentDetail,
     PhysicalDocumentRead,
     PhysicalDocumentUpdate,
+    TransferActionRequest,
     TransferRequest,
 )
 from app.services import audit_service, storage
@@ -88,6 +90,14 @@ def _doc_to_read(db: Session, doc: PhysicalDocument) -> PhysicalDocumentRead:
     out.current_holder_name = _name_or_empty(doc.current_holder)
     out.current_location_name = doc.current_location.name if doc.current_location else ""
     out.case_no = case.case_no if case else ""
+    # Expose the pending transfer (if any) so the UI can show Accept/Reject.
+    pending = next(
+        (l for l in doc.custody_log if l.transfer_status == "pending"), None
+    )
+    if pending:
+        out.pending_transfer_log_id = pending.id
+        out.pending_transfer_to_user_id = pending.to_user_id
+        out.pending_transfer_to_name = _name_or_empty(pending.to_user)
     return out
 
 
@@ -273,6 +283,16 @@ def transfer_document(
     if not doc.is_active:
         raise HTTPException(status_code=409, detail="Document is retired")
 
+    # Block new transfer while one is still pending acceptance.
+    existing_pending = next(
+        (l for l in doc.custody_log if l.transfer_status == "pending"), None
+    )
+    if existing_pending:
+        raise HTTPException(
+            status_code=409,
+            detail="A transfer is already pending acceptance — wait for the receiver to accept or reject first",
+        )
+
     # At least one destination is required so a transfer can't be
     # "nowhere". location_text alone counts as a destination.
     if not (payload.to_user_id or payload.to_location_id or (payload.location_text or "").strip()):
@@ -290,6 +310,11 @@ def transfer_document(
         if not recipient:
             raise HTTPException(status_code=422, detail="Unknown recipient")
 
+    # Transfers to a named user require their acceptance before custody
+    # moves. Transfers to a location only are immediate.
+    needs_acceptance = payload.to_user_id is not None
+    transfer_status = "pending" if needs_acceptance else "accepted"
+
     log = DocumentCustodyLog(
         document_id=doc.id,
         transferred_at=payload.transferred_at or datetime.utcnow(),
@@ -299,21 +324,26 @@ def transfer_document(
         location_id=payload.to_location_id,
         location_text=payload.location_text or "",
         note=payload.note or "",
+        transfer_status=transfer_status,
     )
     db.add(log)
     db.flush()
-    _apply_snapshot(doc, log)
+
+    # Only move custody immediately for location-only transfers.
+    if not needs_acceptance:
+        _apply_snapshot(doc, log)
 
     audit_service.audit_update(
         db,
         "PhysicalDocument",
         doc.id,
-        f"Transferred physical doc #{doc.id}",
+        f"{'Initiated pending transfer' if needs_acceptance else 'Transferred'} physical doc #{doc.id}",
         {"holder": None, "location": None},
         {
             "to_user_id": log.to_user_id,
             "location_id": log.location_id,
             "location_text": log.location_text,
+            "transfer_status": transfer_status,
         },
     )
     db.commit()
@@ -369,6 +399,157 @@ def view_transfer_signature(
         path,
         filename=log.signature_filename or "signature",
         media_type=log.signature_mime or "application/octet-stream",
+        content_disposition_type="inline",
+    )
+
+
+# ---------- accept / reject ----------
+
+@router.post(
+    "/documents/transfers/{log_id}/accept",
+    response_model=PhysicalDocumentDetail,
+)
+def accept_transfer(
+    log_id: int,
+    body: TransferActionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(DOCUMENTS_TRANSFER)),
+) -> PhysicalDocumentDetail:
+    """Receiver accepts a pending transfer — custody moves to them."""
+    log = db.get(DocumentCustodyLog, log_id)
+    if not log or log.transfer_status != "pending":
+        raise HTTPException(status_code=404, detail="Pending transfer not found")
+    if log.to_user_id != user.id:
+        raise HTTPException(
+            status_code=403, detail="You are not the intended recipient of this transfer"
+        )
+    # Skip division scoping for the recipient: the sender already validated
+    # the recipient when creating the transfer, and to_user_id == user.id is
+    # a sufficiently narrow guard.
+    doc = db.get(PhysicalDocument, log.document_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not doc.is_active:
+        raise HTTPException(status_code=409, detail="Document is retired")
+
+    log.transfer_status = "accepted"
+    log.accepted_at = datetime.utcnow()
+    if body.note:
+        log.note = (log.note + "\n[Accepted] " + body.note).strip()
+    _apply_snapshot(doc, log)
+
+    audit_service.audit_update(
+        db,
+        "PhysicalDocument",
+        doc.id,
+        f"Transfer of physical doc #{doc.id} accepted by user #{user.id}",
+        {},
+        {"transfer_status": "accepted", "new_holder": user.id},
+    )
+    db.commit()
+    db.refresh(doc)
+    return _to_detail(db, doc)
+
+
+@router.post(
+    "/documents/transfers/{log_id}/reject",
+    response_model=CustodyLogRead,
+)
+def reject_transfer(
+    log_id: int,
+    body: TransferActionRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(DOCUMENTS_TRANSFER)),
+) -> CustodyLogRead:
+    """Receiver rejects a pending transfer — doc stays with the sender."""
+    log = db.get(DocumentCustodyLog, log_id)
+    if not log or log.transfer_status != "pending":
+        raise HTTPException(status_code=404, detail="Pending transfer not found")
+    if log.to_user_id != user.id:
+        raise HTTPException(
+            status_code=403, detail="You are not the intended recipient of this transfer"
+        )
+    # Same rationale as accept: skip division scoping for the named recipient.
+    if not db.get(PhysicalDocument, log.document_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    log.transfer_status = "rejected"
+    if body.note:
+        log.note = (log.note + "\n[Rejected] " + body.note).strip()
+
+    audit_service.audit_update(
+        db,
+        "PhysicalDocument",
+        log.document_id,
+        f"Transfer of physical doc #{log.document_id} rejected by user #{user.id}",
+        {},
+        {"transfer_status": "rejected"},
+    )
+    db.commit()
+    db.refresh(log)
+    return _log_to_read(log)
+
+
+# ---------- acknowledgment (receiver uploads signed slip) ----------
+
+@router.post(
+    "/documents/transfers/{log_id}/acknowledgment",
+    response_model=CustodyLogRead,
+)
+def upload_acknowledgment(
+    log_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(DOCUMENTS_TRANSFER)),
+) -> CustodyLogRead:
+    """Receiver uploads a signed acknowledgment after accepting a transfer."""
+    log = db.get(DocumentCustodyLog, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    if log.to_user_id != user.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Only the transfer recipient can upload the acknowledgment",
+        )
+    if log.transfer_status != "accepted":
+        raise HTTPException(
+            status_code=409,
+            detail="Transfer must be accepted before uploading acknowledgment",
+        )
+    if not db.get(PhysicalDocument, log.document_id):
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    if log.ack_stored:
+        storage.delete_custody_acknowledgment(log.id, log.ack_stored)
+    stored, size = storage.save_custody_acknowledgment(log.id, file)
+    log.ack_filename = file.filename or stored
+    log.ack_stored = stored
+    log.ack_mime = file.content_type or "application/octet-stream"
+    log.ack_size = size
+    db.commit()
+    db.refresh(log)
+    return _log_to_read(log)
+
+
+@router.get("/documents/transfers/{log_id}/acknowledgment")
+def view_acknowledgment(
+    log_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(DOCUMENTS_READ)),
+) -> FileResponse:
+    log = db.get(DocumentCustodyLog, log_id)
+    if not log:
+        raise HTTPException(status_code=404, detail="Transfer not found")
+    _scoped_doc_or_404(db, user, log.document_id)
+    if not log.ack_stored:
+        raise HTTPException(status_code=404, detail="No acknowledgment on file")
+    path = storage.get_custody_acknowledgment_path(log.id, log.ack_stored)
+    if not path.exists():
+        raise HTTPException(status_code=410, detail="Acknowledgment file missing on disk")
+    return FileResponse(
+        path,
+        filename=log.ack_filename or "acknowledgment",
+        media_type=log.ack_mime or "application/octet-stream",
         content_disposition_type="inline",
     )
 
@@ -466,6 +647,42 @@ def overdue_documents(
             )
         )
     return out
+
+
+@router.get(
+    "/documents/reports/pending-incoming",
+    response_model=list[PendingIncomingRead],
+)
+def pending_incoming(
+    db: Session = Depends(get_db),
+    user: User = Depends(require_permission(DOCUMENTS_READ)),
+) -> list[PendingIncomingRead]:
+    """All pending transfers where the caller is the intended recipient."""
+    logs = (
+        db.query(DocumentCustodyLog)
+        .filter(
+            DocumentCustodyLog.to_user_id == user.id,
+            DocumentCustodyLog.transfer_status == "pending",
+        )
+        .order_by(DocumentCustodyLog.transferred_at.asc())
+        .all()
+    )
+    result: list[PendingIncomingRead] = []
+    for log in logs:
+        doc = db.get(PhysicalDocument, log.document_id)
+        if not doc or not doc.is_active:
+            continue
+        case = db.get(Case, doc.case_id)
+        row = PendingIncomingRead.model_validate(log)
+        row.from_user_name = _name_or_empty(log.from_user)
+        row.to_user_name = _name_or_empty(log.to_user)
+        row.location_name = log.location.name if log.location else ""
+        row.recorded_by_name = _name_or_empty(log.recorded_by)
+        row.document_label = doc.label
+        row.case_id = doc.case_id
+        row.case_no = case.case_no if case else ""
+        result.append(row)
+    return result
 
 
 # ---------- internal ----------

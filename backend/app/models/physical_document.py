@@ -150,11 +150,28 @@ class DocumentCustodyLog(Base):
 
     note: Mapped[str] = mapped_column(Text, default="")
 
-    # Optional signature image captured at handover.
+    # Optional signature image captured at handover (uploaded by sender).
     signature_filename: Mapped[str] = mapped_column(String(255), default="")
     signature_stored: Mapped[str] = mapped_column(String(255), default="")
     signature_mime: Mapped[str] = mapped_column(String(100), default="")
     signature_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+    # Phase 45: two-phase transfer acceptance.
+    # "accepted"  = immediate (legacy rows, location-only transfers).
+    # "pending"   = waiting for to_user to explicitly accept.
+    # "rejected"  = receiver declined; doc stays with original holder.
+    transfer_status: Mapped[str] = mapped_column(
+        String(20), default="accepted", nullable=False
+    )
+    accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    # Signed acknowledgment uploaded by the receiver on acceptance.
+    ack_filename: Mapped[str] = mapped_column(String(255), default="")
+    ack_stored: Mapped[str] = mapped_column(String(255), default="")
+    ack_mime: Mapped[str] = mapped_column(String(100), default="")
+    ack_size: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     document: Mapped[PhysicalDocument] = relationship(back_populates="custody_log")
     recorded_by = relationship(
