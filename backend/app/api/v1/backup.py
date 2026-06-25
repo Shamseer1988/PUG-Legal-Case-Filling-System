@@ -468,6 +468,7 @@ def restore_backup(
             db, job,
             user_id=user.id,
             take_safety_snapshot=payload.take_safety_snapshot,
+            allow_legacy=not pg_tools.is_postgres(),
         )
     except backup_service.LegacyRestoreDisabled as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

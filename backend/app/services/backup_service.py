@@ -501,11 +501,6 @@ def sync_disk_files(db: Session) -> None:
     # Register untracked files
     for name, size in on_disk.items():
         if name not in tracked_names:
-            checksum = ""
-            try:
-                checksum = hashlib.sha256((folder / name).read_bytes()).hexdigest()
-            except Exception:
-                pass
             new_job = BackupJob(
                 kind=BACKUP_KIND_MANUAL,
                 status=JOB_STATUS_COMPLETED,
@@ -514,7 +509,7 @@ def sync_disk_files(db: Session) -> None:
                 finished_at=_utcnow(),
                 storage_path=name,
                 size_bytes=size,
-                checksum_sha256=checksum,
+                checksum_sha256="",  # skip expensive hash; not critical
                 is_encrypted=False,
                 notes="Discovered on disk after restore (was not in dump).",
             )
@@ -583,7 +578,7 @@ def _restore_pgdump_backup(
         # New session against the freshly-restored DB.
         from app.db.session import SessionLocal
 
-        db2 = SessionLocal()
+        db2 = SessionLocal(expire_on_commit=False)
         try:
             if sidecar is not None and sidecar.exists():
                 _restore_storage_from(sidecar)
@@ -625,7 +620,7 @@ def _restore_pgdump_backup(
     except Exception as e:
         from app.db.session import SessionLocal
 
-        db2 = SessionLocal()
+        db2 = SessionLocal(expire_on_commit=False)
         try:
             rj = RestoreJob(
                 backup_id=backup_id,
@@ -1052,14 +1047,33 @@ def _restore_legacy_backup(
             try:
                 for table in reversed(Base.metadata.sorted_tables):
                     wipe_db.execute(table.delete())
+                from sqlalchemy import Date, DateTime
                 for table in Base.metadata.sorted_tables:
                     rows = tables_by_name.get(table.name) or []
                     if not rows:
                         continue
-                    cols = set(table.c.keys())
-                    cleaned = [
-                        {k: v for k, v in row.items() if k in cols} for row in rows
-                    ]
+                    cols = {col.name: col for col in table.c}
+                    cleaned = []
+                    for row in rows:
+                        clean_row = {}
+                        for k, v in row.items():
+                            if k not in cols:
+                                continue
+                            if v and isinstance(v, str):
+                                if isinstance(cols[k].type, DateTime):
+                                    try:
+                                        # Remove Z or replace offset format if fromisoformat fails
+                                        norm = v.replace("Z", "+00:00") if v.endswith("Z") else v
+                                        v = datetime.fromisoformat(norm)
+                                    except ValueError:
+                                        pass
+                                elif isinstance(cols[k].type, Date):
+                                    try:
+                                        v = date.fromisoformat(v)
+                                    except ValueError:
+                                        pass
+                            clean_row[k] = v
+                        cleaned.append(clean_row)
                     wipe_db.execute(table.insert(), cleaned)
                     tables_restored += 1
                     rows_restored += len(cleaned)
@@ -1086,7 +1100,7 @@ def _restore_legacy_backup(
         wipe_db.rollback()
         # Record failure on a clean session - the wipe session can't
         # be trusted to insert RestoreJob if it half-committed.
-        fail_db = SessionLocal()
+        fail_db = SessionLocal(expire_on_commit=False)
         try:
             rj = RestoreJob(
                 backup_id=job_id,
@@ -1117,7 +1131,7 @@ def _restore_legacy_backup(
 
     # Record success on a session opened post-wipe so the only state
     # it sees is the new DB image.
-    ok_db = SessionLocal()
+    ok_db = SessionLocal(expire_on_commit=False)
     try:
         rj = RestoreJob(
             backup_id=job_id,
