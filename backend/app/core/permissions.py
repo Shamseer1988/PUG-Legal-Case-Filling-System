@@ -18,6 +18,8 @@ ROLES_WRITE = "roles:write"
 # Masters
 MASTERS_READ = "masters:read"
 MASTERS_WRITE = "masters:write"
+# Grants create-only on Customers + Salesmen, scoped to the user's own division(s)
+MASTERS_CREATE_OWN_DIVISION = "masters:create_own_division"
 
 # Cases — placeholders, filled out in later phases
 CASES_CREATE = "cases:create"
@@ -54,6 +56,7 @@ ROLE_PRESETS: dict[str, list[str]] = {
         CASES_READ,
         EXPENSES_PAY,
         MASTERS_READ,
+        MASTERS_CREATE_OWN_DIVISION,
         DOCUMENTS_READ,
         DOCUMENTS_TRANSFER,
     ],

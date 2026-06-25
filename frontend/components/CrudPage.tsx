@@ -14,6 +14,7 @@ export type CrudField =
       options: { value: string | number; label: string }[];
       required?: boolean;
       allowEmpty?: boolean;
+      disabled?: boolean;
     }
   | { name: string; label: string; type: 'checkbox' }
   | {
@@ -38,6 +39,8 @@ type Props = {
   columns: { key: string; label: string; render?: (v: unknown, row: Row) => React.ReactNode }[];
   emptyTemplate: Record<string, unknown>;
   canWrite?: boolean;
+  // Phase 44: allow create without edit/delete (e.g. Accountant own-division)
+  canCreate?: boolean;
   // Phase 40: optional per-row buttons rendered before Edit /
   // Delete - used by Customers to launch the Partners sub-modal.
   rowActions?: (row: Row) => React.ReactNode;
@@ -50,6 +53,7 @@ export function CrudPage({
   columns,
   emptyTemplate,
   canWrite = true,
+  canCreate,
   rowActions,
 }: Props) {
   const t = useT();
@@ -130,7 +134,7 @@ export function CrudPage({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold">{title}</h1>
-        {canWrite && !formOpen && (
+        {(canWrite || canCreate) && !formOpen && (
           <button
             onClick={startCreate}
             className="flex items-center gap-2 rounded-md bg-pug-gold-500 px-3 py-2 text-sm font-semibold text-pug-navy-800 hover:bg-pug-gold-400"
@@ -188,7 +192,7 @@ export function CrudPage({
                   {c.label}
                 </th>
               ))}
-              {canWrite && <th className="px-4 py-3 text-right">{t('common.actions')}</th>}
+              {(canWrite || rowActions) && <th className="px-4 py-3 text-right">{t('common.actions')}</th>}
             </tr>
           </thead>
           <tbody>
@@ -339,6 +343,7 @@ function FieldInput({
         </span>
         <select
           required={field.required}
+          disabled={field.disabled}
           value={value === null || value === undefined ? '' : String(value)}
           onChange={(e) => {
             const raw = e.target.value;
@@ -346,7 +351,7 @@ function FieldInput({
             else if (typeof field.options[0]?.value === 'number') onChange(Number(raw));
             else onChange(raw);
           }}
-          className="w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm"
+          className={`w-full rounded-md border border-[rgb(var(--color-border))] bg-transparent px-3 py-2 text-sm ${field.disabled ? 'cursor-not-allowed opacity-60' : ''}`}
         >
           {field.allowEmpty && <option value="">--</option>}
           {field.options.map((o) => (
