@@ -121,6 +121,26 @@ def list_backups(
     db: Session = Depends(get_db),
     _: User = Depends(require_permission(ADMIN_BACKUP)),
 ) -> list[BackupJobRead]:
+    # Reconcile DB records with actual files on disk before listing.
+    # This is cheap (one directory scan) and guarantees the sizes /
+    # filenames shown in the UI match reality — critical after a
+    # pg_restore that replaced the backup_jobs table.
+    try:
+        backup_service.sync_disk_files(db)
+    except Exception as exc:
+        # sync is best-effort — never block listing because of it.
+        from loguru import logger
+        logger.warning("sync_disk_files failed during list: {}", exc)
+    return [BackupJobRead.model_validate(r) for r in backup_service.list_backups(db)]
+
+
+@router.post("/sync", response_model=list[BackupJobRead])
+def sync_disk(
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission(ADMIN_BACKUP)),
+) -> list[BackupJobRead]:
+    """Explicitly reconcile backup_jobs with files on disk."""
+    backup_service.sync_disk_files(db)
     return [BackupJobRead.model_validate(r) for r in backup_service.list_backups(db)]
 
 
@@ -411,16 +431,22 @@ def delete_backup(
     user: User = Depends(require_permission(ADMIN_BACKUP)),
 ) -> None:
     job = _get_or_404(db, backup_id)
-    audit_service.record_event(
-        db,
-        action="backup_deleted",
-        entity_type="BackupJob",
-        entity_id=job.id,
-        summary=f"Deleted backup #{job.id} ({job.storage_path})",
-        actor=user,
-        commit=True,
-    )
-    backup_service.delete_backup(db, job, actor_user_id=user.id)
+    try:
+        audit_service.record_event(
+            db,
+            action="backup_deleted",
+            entity_type="BackupJob",
+            entity_id=job.id,
+            summary=f"Deleted backup #{job.id} ({job.storage_path})",
+            actor=user,
+            commit=True,
+        )
+        backup_service.delete_backup(db, job, actor_user_id=user.id)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Delete failed: {e}",
+        ) from e
 
 
 # ============================== restore ==============================
@@ -445,23 +471,16 @@ def restore_backup(
         )
     except backup_service.LegacyRestoreDisabled as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    except ValueError as e:
+        # Empty storage_path or invalid backup
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Restore failed: {e}") from e
 
-    audit_service.record_event(
-        db,
-        action=audit_service.ACTION_RESTORE,
-        entity_type="BackupJob",
-        entity_id=job.id,
-        summary=(
-            f"Restored from backup #{job.id} "
-            f"({rj.tables_restored} tables, {rj.rows_restored} rows)"
-        ),
-        meta={
-            "restore_job_id": rj.id,
-            "safety_snapshot_id": rj.safety_snapshot_id,
-        },
-        actor=user,
-        commit=True,
-    )
+    # NOTE: After a pg_restore the original ``db`` session is closed
+    # and the DB has been fully replaced. The restore service already
+    # records the audit trail via log_activity + RestoreJob on a fresh
+    # session, so we don't duplicate the audit_service call here (the
+    # closed session would error anyway).
     return RestoreJobRead.model_validate(rj)
+

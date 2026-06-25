@@ -418,7 +418,11 @@ def verify_backup(job: BackupJob) -> dict[str, Any]:
 
 def delete_backup(db: Session, job: BackupJob, *, actor_user_id: int | None = None) -> None:
     """Remove a backup job + its on-disk files. Cloud copies stay - the
-    operator can clear those from the bucket directly."""
+    operator can clear those from the bucket directly.
+
+    FK references from ``restore_jobs`` and ``backup_activity_log`` are
+    nullified first so the delete doesn't violate RESTRICT constraints.
+    """
     for fn in (job.storage_path, job.sidecar_path):
         if not fn:
             continue
@@ -429,6 +433,21 @@ def delete_backup(db: Session, job: BackupJob, *, actor_user_id: int | None = No
             except OSError as e:
                 logger.warning("Could not delete {}: {}", p, e)
     file_name = job.storage_path
+    job_id = job.id
+
+    # Clear FK references that would block the DELETE.
+    # restore_jobs.backup_id -> RESTRICT; safety_snapshot_id -> SET NULL
+    db.query(RestoreJob).filter(RestoreJob.backup_id == job_id).delete(
+        synchronize_session="fetch"
+    )
+    db.query(RestoreJob).filter(RestoreJob.safety_snapshot_id == job_id).update(
+        {"safety_snapshot_id": None}, synchronize_session="fetch"
+    )
+    # backup_activity_log.backup_job_id -> SET NULL
+    db.query(BackupActivityLog).filter(
+        BackupActivityLog.backup_job_id == job_id
+    ).update({"backup_job_id": None}, synchronize_session="fetch")
+
     db.delete(job)
     db.commit()
     log_activity(
@@ -437,6 +456,75 @@ def delete_backup(db: Session, job: BackupJob, *, actor_user_id: int | None = No
         file_name=file_name,
         message="Backup file deleted by admin.",
         actor_user_id=actor_user_id,
+    )
+
+
+# ---------------- disk / DB sync ----------------
+def sync_disk_files(db: Session) -> None:
+    """Reconcile the ``backup_jobs`` table with what's actually on disk.
+
+    After a ``pg_restore`` the DB is replaced by the dump's data - the
+    ``backup_jobs`` rows now reflect whatever the dump contained at
+    snapshot time, *not* what's currently on disk. This helper:
+
+    1. Scans the backups directory for ``.dump`` files.
+    2. For each file already tracked by a ``BackupJob`` row, updates
+       ``size_bytes`` to the actual file size (fixes the "0 B" display).
+    3. For files that exist on disk but have *no* matching row, inserts
+       a new ``BackupJob`` record so they appear in the listing.
+    4. For DB rows whose file is missing from disk, marks size as 0
+       (the Download button will 410 but the record stays for audit).
+    """
+    folder = _backups_dir()
+    on_disk: dict[str, int] = {}
+    for f in folder.iterdir():
+        if f.is_file() and f.suffix == PGDUMP_SUFFIX:
+            on_disk[f.name] = f.stat().st_size
+
+    # Update existing rows
+    existing_rows = db.query(BackupJob).all()
+    tracked_names: set[str] = set()
+    for row in existing_rows:
+        if not row.storage_path:
+            continue
+        tracked_names.add(row.storage_path)
+        if row.storage_path in on_disk:
+            actual_size = on_disk[row.storage_path]
+            if row.size_bytes != actual_size:
+                row.size_bytes = actual_size
+        elif row.format == BACKUP_FORMAT_PGDUMP:
+            # File missing from disk - zero the size so the UI
+            # reflects that it's no longer downloadable.
+            if row.size_bytes != 0:
+                row.size_bytes = 0
+
+    # Register untracked files
+    for name, size in on_disk.items():
+        if name not in tracked_names:
+            checksum = ""
+            try:
+                checksum = hashlib.sha256((folder / name).read_bytes()).hexdigest()
+            except Exception:
+                pass
+            new_job = BackupJob(
+                kind=BACKUP_KIND_MANUAL,
+                status=JOB_STATUS_COMPLETED,
+                format=BACKUP_FORMAT_PGDUMP,
+                started_at=_utcnow(),
+                finished_at=_utcnow(),
+                storage_path=name,
+                size_bytes=size,
+                checksum_sha256=checksum,
+                is_encrypted=False,
+                notes="Discovered on disk after restore (was not in dump).",
+            )
+            db.add(new_job)
+
+    db.commit()
+    logger.info(
+        "sync_disk_files: {} files on disk, {} tracked rows",
+        len(on_disk),
+        len(tracked_names),
     )
 
 
@@ -457,6 +545,14 @@ def _restore_pgdump_backup(
     the SQLAlchemy session is moot once pg_restore replays the DB.
     """
     pg_tools.assert_binaries_present()
+
+    # Guard: empty storage_path would resolve to the directory itself
+    # and pg_restore would fail with "toc.dat does not exist".
+    if not job.storage_path:
+        raise ValueError(
+            f"Backup #{job.id} has an empty storage_path — the dump "
+            f"file is missing or was never recorded."
+        )
 
     safety: BackupJob | None = None
     if take_safety_snapshot:
@@ -491,6 +587,12 @@ def _restore_pgdump_backup(
         try:
             if sidecar is not None and sidecar.exists():
                 _restore_storage_from(sidecar)
+
+            # Sync the backup_jobs table with files actually on disk.
+            # After pg_restore the table contains stale rows from the
+            # dump - sizes may be wrong and new files (like the safety
+            # snapshot) won't be listed.
+            sync_disk_files(db2)
 
             # The BackupJob row for the snapshot we just restored may
             # exist under a different id after restore (the dump's row

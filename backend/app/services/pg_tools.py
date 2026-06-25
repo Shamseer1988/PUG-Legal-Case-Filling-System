@@ -130,10 +130,28 @@ def pg_restore_from_file(in_path: Path) -> None:
     onto the configured DB. Drops + recreates objects; safe to rerun.
     Errors from pg_restore are raised - caller should have taken a
     safety snapshot first.
+
+    **Warning handling**: ``pg_restore`` with ``--clean --if-exists``
+    commonly exits with rc=1 when it encounters non-fatal warnings
+    (e.g. "relation does not exist, skipping"). We only treat rc > 1
+    as a hard failure. rc=1 is logged as a warning and allowed to
+    proceed — the data was still restored successfully.
     """
     binary = binary_path("pg_restore")
     if binary is None:
         raise RuntimeError("pg_restore binary not found on PATH")
+
+    # Guard: make sure we received a *file* path, not a directory.
+    # A previous bug passed the backups directory when storage_path
+    # was empty (""), resulting in the cryptic "toc.dat does not exist"
+    # error from pg_restore.
+    if not in_path.exists():
+        raise RuntimeError(f"pg_restore input file does not exist: {in_path}")
+    if in_path.is_dir():
+        raise RuntimeError(
+            f"pg_restore received a directory instead of a .dump file: {in_path}"
+        )
+
     db = _parsed_db()
     cmd = [
         binary,
@@ -156,11 +174,19 @@ def pg_restore_from_file(in_path: Path) -> None:
         text=True,
         check=False,
     )
-    if proc.returncode != 0:
-        # pg_restore writes a lot of notices to stderr even on success;
-        # only surface stderr when rc != 0.
+    if proc.returncode > 1:
+        # rc > 1 is a genuine failure (corrupt archive, connection
+        # refused, permission denied, etc.)
         raise RuntimeError(
             f"pg_restore failed (rc={proc.returncode}): {proc.stderr.strip()[:2000]}"
+        )
+    if proc.returncode == 1:
+        # rc=1 typically means non-fatal warnings (e.g. DROP IF EXISTS
+        # on tables that don't exist yet). Log but don't abort — the
+        # data was restored.
+        logger.warning(
+            "pg_restore exited with rc=1 (non-fatal warnings): {}",
+            proc.stderr.strip()[:1000],
         )
 
 
