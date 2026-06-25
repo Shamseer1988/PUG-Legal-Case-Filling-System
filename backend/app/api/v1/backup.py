@@ -443,6 +443,8 @@ def restore_backup(
             user_id=user.id,
             take_safety_snapshot=payload.take_safety_snapshot,
         )
+    except backup_service.LegacyRestoreDisabled as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Restore failed: {e}") from e
 

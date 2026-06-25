@@ -608,15 +608,24 @@ export default function BackupsPage() {
                 >
                   <Download className="h-3 w-3" /> Download
                 </button>
-                <button
-                  onClick={() => {
-                    setRestoreFor({ job: j });
-                    setConfirmation('');
-                  }}
-                  className="mr-1 inline-flex items-center gap-1 rounded border border-pug-gold-500/40 bg-pug-gold-500/10 px-2 py-1 text-[11px] font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20"
-                >
-                  <Undo2 className="h-3 w-3" /> Restore
-                </button>
+                {j.format === 'legacy_enc' ? (
+                  <span
+                    title="Legacy .bkp.enc restore is disabled. Download the file and convert offline if you really need it."
+                    className="mr-1 inline-flex cursor-not-allowed items-center gap-1 rounded border border-[rgb(var(--color-border))]/40 px-2 py-1 text-[11px] text-[rgb(var(--color-muted))]"
+                  >
+                    <Undo2 className="h-3 w-3" /> Restore (archive)
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setRestoreFor({ job: j });
+                      setConfirmation('');
+                    }}
+                    className="mr-1 inline-flex items-center gap-1 rounded border border-pug-gold-500/40 bg-pug-gold-500/10 px-2 py-1 text-[11px] font-semibold text-pug-gold-700 hover:bg-pug-gold-500/20"
+                  >
+                    <Undo2 className="h-3 w-3" /> Restore
+                  </button>
+                )}
                 <button
                   onClick={() => deleteBackup(j)}
                   className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] text-rose-600 hover:bg-rose-500/10"

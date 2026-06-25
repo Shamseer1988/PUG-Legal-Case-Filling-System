@@ -249,17 +249,34 @@ def create_pgdump_backup(
         dump_path = _backups_dir() / filename
         pg_tools.pg_dump_to_file(dump_path)
 
-        sidecar_name = filename.replace(PGDUMP_SUFFIX, SIDECAR_SUFFIX)
-        sidecar_path = _backups_dir() / sidecar_name
-        attachment_count = _archive_storage_to(sidecar_path)
+        # Per Phase 42 follow-up: attachments sidecar only on weekly
+        # (and manual when explicitly requested). Daily runs stay lean
+        # so off-site shipping is cheap. Manual is left opt-in via
+        # notes for now - the operator who clicks "Backup now" can
+        # request a sidecar through the API by sending push_cloud=True
+        # OR we treat manual as 'safe default = no sidecar' to match
+        # the Finance App behaviour.
+        write_sidecar = kind == BACKUP_KIND_WEEKLY
+        sidecar_name = ""
+        attachment_count = 0
+        if write_sidecar:
+            sidecar_name = filename.replace(PGDUMP_SUFFIX, SIDECAR_SUFFIX)
+            sidecar_path = _backups_dir() / sidecar_name
+            attachment_count = _archive_storage_to(sidecar_path)
+            sidecar_size = sidecar_path.stat().st_size if sidecar_path.exists() else 0
+            if attachment_count == 0 and sidecar_path.exists():
+                # Empty tarballs just clutter the listing; drop them.
+                sidecar_path.unlink(missing_ok=True)
+                sidecar_name = ""
+                sidecar_size = 0
+        else:
+            sidecar_size = 0
 
-        size_total = dump_path.stat().st_size + (
-            sidecar_path.stat().st_size if sidecar_path.exists() else 0
-        )
+        size_total = dump_path.stat().st_size + sidecar_size
         checksum = hashlib.sha256(dump_path.read_bytes()).hexdigest()
 
         job.storage_path = filename
-        job.sidecar_path = sidecar_name if sidecar_path.exists() else ""
+        job.sidecar_path = sidecar_name
         job.size_bytes = size_total
         job.checksum_sha256 = checksum
         job.attachment_count = attachment_count
@@ -534,17 +551,38 @@ def _restore_pgdump_backup(
         raise
 
 
+class LegacyRestoreDisabled(RuntimeError):
+    """Phase 42 retires the legacy ``.bkp.enc`` restore button. The
+    file format is kept downloadable for archival reasons but in-app
+    restore is gated off - operators who really need it can convert
+    offline and re-upload as a ``.dump``."""
+
+
 def restore_backup(
     db: Session,
     job: BackupJob,
     *,
     user_id: int | None = None,
     take_safety_snapshot: bool = True,
+    allow_legacy: bool = False,
 ) -> RestoreJob:
-    """Dispatch by format - new pg_dump path or legacy tar path."""
+    """Dispatch by format - new pg_dump path or legacy tar path.
+
+    Legacy restore is gated off by default since the live LXC restore
+    was failing on it. Use the legacy code path directly (with
+    ``allow_legacy=True``) only from a one-off CLI/admin tool when
+    you really need to recover an old ``.bkp.enc`` snapshot.
+    """
     if job.format == BACKUP_FORMAT_PGDUMP:
         return _restore_pgdump_backup(
             db, job, user_id=user_id, take_safety_snapshot=take_safety_snapshot
+        )
+    if not allow_legacy:
+        raise LegacyRestoreDisabled(
+            "Legacy .bkp.enc backups are kept downloadable for archival "
+            "purposes but in-app restore is disabled. Download the file, "
+            "convert offline if needed, and use Upload + Restore with the "
+            "resulting .dump."
         )
     return _restore_legacy_backup(
         db, job, user_id=user_id, take_safety_snapshot=take_safety_snapshot
