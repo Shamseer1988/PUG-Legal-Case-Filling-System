@@ -61,6 +61,22 @@ def require_permission(permission: str) -> Callable:
     return _checker
 
 
+def require_any_permission(*permissions: str) -> Callable:
+    """Pass if the user holds ANY one of the listed permissions."""
+    def _checker(user: User = Depends(get_current_user)) -> User:
+        if user.is_super:
+            return user
+        perms = user.role.permissions if user.role else []
+        for permission in permissions:
+            if has_permission(perms, permission):
+                return user
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Missing permission: {' or '.join(permissions)}",
+        )
+    return _checker
+
+
 def require_super(user: User = Depends(get_current_user)) -> User:
     if not user.is_super:
         raise HTTPException(

@@ -8,8 +8,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import allowed_division_ids
-from app.core.deps import require_permission
-from app.core.permissions import MASTERS_READ, MASTERS_WRITE
+from app.core.deps import require_any_permission, require_permission
+from app.core.permissions import MASTERS_CREATE_OWN_DIVISION, MASTERS_READ, MASTERS_WRITE, has_permission
 from app.db.session import get_db
 from app.models.masters import (
     Bank,
@@ -65,6 +65,7 @@ def _register(
     order_by: Any,
     unique_field: str | None = None,
     scope_column: Any | None = None,
+    division_create_field: str | None = None,
 ) -> None:
     @router.get(path, response_model=list[read_schema])
     def list_items(
@@ -86,12 +87,31 @@ def _register(
 
     entity_type = model.__name__
 
+    # Dependency: full write OR own-division create (when division_create_field is set)
+    _create_dep = (
+        require_any_permission(MASTERS_WRITE, MASTERS_CREATE_OWN_DIVISION)
+        if division_create_field
+        else require_permission(MASTERS_WRITE)
+    )
+
     @router.post(path, response_model=read_schema, status_code=status.HTTP_201_CREATED)
     def create_item(
         payload: create_schema,
         db: Session = Depends(get_db),
-        _: User = Depends(require_permission(MASTERS_WRITE)),
+        user: User = Depends(_create_dep),
     ):
+        # Own-division scope guard: users without full masters:write may only
+        # create records whose division_id falls within their allowed set.
+        if division_create_field and not user.is_super:
+            perms = user.role.permissions if user.role else []
+            if not has_permission(perms, MASTERS_WRITE):
+                submitted_div = getattr(payload, division_create_field, None)
+                allowed = allowed_division_ids(user)
+                if allowed is not None and (not allowed or submitted_div not in allowed):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Cannot create record outside your assigned division",
+                    )
         if unique_field:
             value = getattr(payload, unique_field)
             if db.query(model).filter(getattr(model, unique_field) == value).first():
@@ -200,6 +220,7 @@ _register(
     order_by=Salesman.code,
     unique_field="code",
     scope_column=Salesman.division_id,
+    division_create_field="division_id",
 )
 _register(
     router,
@@ -211,6 +232,7 @@ _register(
     order_by=Customer.code,
     unique_field="code",
     scope_column=Customer.division_id,
+    division_create_field="division_id",
 )
 # ---------- Lawyers (custom: division M2M + "All Companies" flag) ----------
 def _lawyer_to_read(obj: Lawyer) -> LawyerRead:

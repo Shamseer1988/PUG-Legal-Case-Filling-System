@@ -14,6 +14,9 @@ export default function CustomersPage() {
   const divisions = useMasterOptions('/api/v1/masters/divisions', 'name');
   const salesmen = useMasterOptions('/api/v1/masters/salesmen', 'name');
   const canWriteMasters = hasPermission(me, 'masters:write');
+  // Accountants get create-only access limited to their own division
+  const canCreateOwn = !canWriteMasters && hasPermission(me, 'masters:create_own_division');
+  const accountantDivId = canCreateOwn ? (me?.divisions?.[0] ?? null) : null;
   const [partnersFor, setPartnersFor] = useState<{ id: number; name: string } | null>(
     null,
   );
@@ -24,6 +27,7 @@ export default function CustomersPage() {
         title={t('customers.title')}
         resource="/api/v1/masters/customers"
         canWrite={canWriteMasters}
+        canCreate={canCreateOwn}
         emptyTemplate={{
           code: '',
           name: '',
@@ -31,7 +35,7 @@ export default function CustomersPage() {
           phone: '',
           email: '',
           address: '',
-          division_id: null,
+          division_id: accountantDivId,
           salesman_id: null,
           is_active: true,
         }}
@@ -56,7 +60,8 @@ export default function CustomersPage() {
             label: t('customers.col.division'),
             type: 'select',
             options: divisions,
-            allowEmpty: true,
+            allowEmpty: !canCreateOwn,
+            disabled: canCreateOwn,
           },
           {
             name: 'salesman_id',

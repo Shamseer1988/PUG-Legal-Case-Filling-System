@@ -9,18 +9,23 @@ export default function SalesmenPage() {
   const me = useAuthStore((s) => s.me);
   const t = useT();
   const divisions = useMasterOptions('/api/v1/masters/divisions', 'name');
+  const canWrite = hasPermission(me, 'masters:write');
+  // Accountants get create-only access limited to their own division
+  const canCreateOwn = !canWrite && hasPermission(me, 'masters:create_own_division');
+  const accountantDivId = canCreateOwn ? (me?.divisions?.[0] ?? null) : null;
 
   return (
     <CrudPage
       title={t('masters.salesmen.title')}
       resource="/api/v1/masters/salesmen"
-      canWrite={hasPermission(me, 'masters:write')}
+      canWrite={canWrite}
+      canCreate={canCreateOwn}
       emptyTemplate={{
         code: '',
         name: '',
         email: '',
         phone: '',
-        division_id: null,
+        division_id: accountantDivId,
         is_active: true,
       }}
       fields={[
@@ -33,7 +38,8 @@ export default function SalesmenPage() {
           label: t('masters.col.division'),
           type: 'select',
           options: divisions,
-          allowEmpty: true,
+          allowEmpty: !canCreateOwn,
+          disabled: canCreateOwn,
         },
         { name: 'is_active', label: t('common.active'), type: 'checkbox' },
       ]}
