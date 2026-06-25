@@ -520,7 +520,9 @@ def test_transfer_requires_transfer_permission(client) -> None:
 
 
 # ============================== Print appendix ==============================
-def test_print_view_includes_physical_files_section(client) -> None:
+def test_print_view_omits_physical_files_section(client) -> None:
+    """Physical Files chain-of-custody is internal-only and must
+    not leak into the case application form's print/PDF output."""
     c, _ = client
     h = _admin_h(c)
     div = _make_division(c, h)
@@ -531,12 +533,8 @@ def test_print_view_includes_physical_files_section(client) -> None:
         json={"label": "Original Court Filing", "kind": "court_filing"},
     )
 
-    # Pump through to submit so the print view doesn't blow up on
-    # missing required cheques etc. Phase 40 helper attaches a
-    # signatory so the submit gate passes.
     attach_default_signatory(c, h, case)
 
-    # Render the HTML print page.
     from app.services import render
     from app.db import session as session_mod
 
@@ -545,8 +543,8 @@ def test_print_view_includes_physical_files_section(client) -> None:
         full = db.get(Case, case["id"])
         html = render.render_case_print(db, full)
 
-    assert "Physical Files" in html
-    assert "Original Court Filing" in html
+    assert "Physical Files" not in html
+    assert "Original Court Filing" not in html
 
 
 # ============================== Signature upload ==============================
