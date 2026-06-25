@@ -236,7 +236,7 @@ export function CashRequestsPanel({ caseId, status }: Props) {
                       {r.approved_at && new Date(r.approved_at).toLocaleString()}
                     </div>
                     {r.approval_comment && (
-                      <div className="text-[10px] italic">"{r.approval_comment}"</div>
+                      <div className="text-[10px] italic">&quot;{r.approval_comment}&quot;</div>
                     )}
                   </td>
                   <td className="px-3 py-2 text-xs">

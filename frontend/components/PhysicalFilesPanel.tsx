@@ -177,7 +177,7 @@ export function PhysicalFilesPanel({ caseId, canTransfer }: Props) {
         <div className="py-8 text-center text-sm text-[rgb(var(--color-muted))]">
           No physical documents registered for this case.
           <div className="mt-1 text-[10px]">
-            A "Case Folder" row is auto-created when a new case is filed;
+            A &quot;Case Folder&quot; row is auto-created when a new case is filed;
             older cases need a one-time Register Document.
           </div>
         </div>

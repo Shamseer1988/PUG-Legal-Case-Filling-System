@@ -23,6 +23,10 @@
     background: rgb(var(--color-bg));
     color: rgb(var(--color-fg));
   }
+  select option {
+    background-color: rgb(var(--color-card));
+    color: rgb(var(--color-fg));
+  }
 }
 
 /* ---- Print-optimised view (used by Ctrl+P on any page) ---- */

@@ -169,7 +169,7 @@ export default function CashRequestsInboxPage() {
                   <td className="px-4 py-2 text-xs">
                     {r.approved_by_name || '-'}
                     {r.approval_comment && (
-                      <div className="text-[10px] italic">"{r.approval_comment}"</div>
+                      <div className="text-[10px] italic">&quot;{r.approval_comment}&quot;</div>
                     )}
                   </td>
                   <td className="px-4 py-2 text-right">
