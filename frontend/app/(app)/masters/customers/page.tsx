@@ -105,7 +105,7 @@ export default function CustomersPage() {
         <CustomerPartnersModal
           customerId={partnersFor.id}
           customerName={partnersFor.name}
-          canWrite={canWriteMasters}
+          canWrite={canWriteMasters || canCreateOwn}
           onClose={() => setPartnersFor(null)}
         />
       )}

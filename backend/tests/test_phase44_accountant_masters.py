@@ -165,6 +165,65 @@ def test_accountant_cannot_update_customer(client):
     assert r2.status_code == 403, r2.text
 
 
+def test_accountant_can_add_partner_to_own_division_customer(client):
+    """Accountant can add a partner to a customer in their own division."""
+    c, SL = client
+    div_a_id, _ = _setup_divisions_and_accountant(SL)
+
+    token = _login(c, "acct44@pug.local")
+    headers = {"Authorization": f"Bearer {token}"}
+    # Create the customer first
+    rc = c.post(
+        "/api/v1/masters/customers",
+        json={"code": "C44PART", "name": "PartnerCust", "division_id": div_a_id, "is_active": True},
+        headers=headers,
+    )
+    assert rc.status_code == 201, rc.text
+    cust_id = rc.json()["id"]
+
+    rp = c.post(
+        f"/api/v1/masters/customers/{cust_id}/partners",
+        json={
+            "name": "Partner One",
+            "id_number": "P-001",
+            "residency_status": "inside_country",
+            "is_active": True,
+        },
+        headers=headers,
+    )
+    assert rp.status_code == 201, rp.text
+    assert rp.json()["name"] == "Partner One"
+
+
+def test_accountant_cannot_add_partner_to_other_division_customer(client):
+    """Accountant blocked when the customer belongs to another division."""
+    c, SL = client
+    _, div_b_id = _setup_divisions_and_accountant(SL)
+
+    # Admin creates the cross-division customer
+    admin_token = _login(c, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD)
+    rc = c.post(
+        "/api/v1/masters/customers",
+        json={"code": "C44CROSS", "name": "CrossCust", "division_id": div_b_id, "is_active": True},
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert rc.status_code == 201
+    cust_id = rc.json()["id"]
+
+    acct_token = _login(c, "acct44@pug.local")
+    rp = c.post(
+        f"/api/v1/masters/customers/{cust_id}/partners",
+        json={
+            "name": "Blocked Partner",
+            "residency_status": "inside_country",
+            "is_active": True,
+        },
+        headers={"Authorization": f"Bearer {acct_token}"},
+    )
+    # _scope_customer_or_404 hides the customer from this accountant -> 404
+    assert rp.status_code == 404, rp.text
+
+
 def test_accountant_cannot_delete_customer(client):
     c, SL = client
     div_a_id, _ = _setup_divisions_and_accountant(SL)

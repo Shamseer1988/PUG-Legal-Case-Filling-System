@@ -403,7 +403,7 @@ def create_customer_partner(
     customer_id: int,
     payload: CustomerPartnerCreate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission(MASTERS_WRITE)),
+    user: User = Depends(require_any_permission(MASTERS_WRITE, MASTERS_CREATE_OWN_DIVISION)),
 ) -> CustomerPartnerRead:
     cust = _scope_customer_or_404(db, user, customer_id)
     p = CustomerPartner(customer_id=cust.id, **payload.model_dump())
@@ -430,7 +430,7 @@ def update_customer_partner(
     partner_id: int,
     payload: CustomerPartnerUpdate,
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission(MASTERS_WRITE)),
+    user: User = Depends(require_any_permission(MASTERS_WRITE, MASTERS_CREATE_OWN_DIVISION)),
 ) -> CustomerPartnerRead:
     cust = _scope_customer_or_404(db, user, customer_id)
     p = db.get(CustomerPartner, partner_id)
@@ -457,7 +457,7 @@ def delete_customer_partner(
     customer_id: int,
     partner_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission(MASTERS_WRITE)),
+    user: User = Depends(require_any_permission(MASTERS_WRITE, MASTERS_CREATE_OWN_DIVISION)),
 ) -> None:
     cust = _scope_customer_or_404(db, user, customer_id)
     p = db.get(CustomerPartner, partner_id)
@@ -484,7 +484,7 @@ def upload_partner_id_document(
     partner_id: int,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission(MASTERS_WRITE)),
+    user: User = Depends(require_any_permission(MASTERS_WRITE, MASTERS_CREATE_OWN_DIVISION)),
 ) -> CustomerPartnerRead:
     cust = _scope_customer_or_404(db, user, customer_id)
     p = db.get(CustomerPartner, partner_id)
@@ -538,7 +538,7 @@ def delete_partner_id_document(
     customer_id: int,
     partner_id: int,
     db: Session = Depends(get_db),
-    user: User = Depends(require_permission(MASTERS_WRITE)),
+    user: User = Depends(require_any_permission(MASTERS_WRITE, MASTERS_CREATE_OWN_DIVISION)),
 ) -> CustomerPartnerRead:
     cust = _scope_customer_or_404(db, user, customer_id)
     p = db.get(CustomerPartner, partner_id)
