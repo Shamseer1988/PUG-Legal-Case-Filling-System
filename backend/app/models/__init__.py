@@ -2,7 +2,7 @@
 
 from app.db.base import Base
 from app.models.audit import AuditLog
-from app.models.backup import BackupJob, RestoreJob
+from app.models.backup import BackupActivityLog, BackupJob, RestoreJob
 from app.models.case import (
     Case,
     CaseAttachment,
@@ -75,6 +75,7 @@ __all__ = [
     "AuditLog",
     "BackupJob",
     "RestoreJob",
+    "BackupActivityLog",
     "JobRun",
     "SettingsKV",
 ]

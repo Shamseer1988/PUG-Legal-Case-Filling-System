@@ -13,6 +13,18 @@ TICK_JOB_ID = "scheduled-reports-tick"
 EMAIL_QUEUE_JOB_ID = "email-queue-tick"
 SLA_JOB_ID = "sla-breach-tick"
 HEARING_JOB_ID = "hearing-reminder-tick"
+BACKUP_DAILY_JOB_ID = "backup-daily-tick"
+BACKUP_WEEKLY_JOB_ID = "backup-weekly-tick"
+
+_WEEKDAY_TO_CRON = {
+    "Monday": "mon",
+    "Tuesday": "tue",
+    "Wednesday": "wed",
+    "Thursday": "thu",
+    "Friday": "fri",
+    "Saturday": "sat",
+    "Sunday": "sun",
+}
 
 
 def start() -> None:
@@ -65,6 +77,10 @@ def start() -> None:
         coalesce=True,
     )
     _scheduler.start()
+    # Phase 42: arm the daily/weekly backup ticks from persisted
+    # settings. Done after start() so the cron triggers register
+    # with a live scheduler.
+    refresh_backup_schedule()
     logger.info(
         "Scheduler started (reports=60s, email=10s, sla=300s, hearings=300s)"
     )
@@ -159,13 +175,126 @@ _JOB_INTERVALS_SECONDS: dict[str, int] = {
 }
 
 
+def _backup_daily_tick() -> None:
+    """Phase 42: scheduled local pg_dump. The cron trigger is built
+    from ``backup.daily_time`` in settings - re-armed by
+    ``refresh_backup_schedule``."""
+    from app.db.session import SessionLocal
+    from app.services import backup_service, job_monitor
+    from app.models.backup import BACKUP_KIND_DAILY
+
+    db = SessionLocal()
+    try:
+        with job_monitor.record(db, BACKUP_DAILY_JOB_ID) as h:
+            job = backup_service.create_backup(
+                db, kind=BACKUP_KIND_DAILY, user_id=None,
+                notes="Auto daily backup",
+                push_cloud=False,
+            )
+            h.detail = f"job_id={job.id} size={job.size_bytes}"
+    except Exception as e:  # pragma: no cover
+        logger.exception("Daily backup tick failed: {}", e)
+    finally:
+        db.close()
+
+
+def _backup_weekly_tick() -> None:
+    """Phase 42: weekly local pg_dump + R2 push. The day-of-week +
+    time come from ``backup.weekly_day`` and ``backup.weekly_time``."""
+    from app.db.session import SessionLocal
+    from app.services import backup_service, job_monitor
+    from app.models.backup import BACKUP_KIND_WEEKLY
+
+    db = SessionLocal()
+    try:
+        with job_monitor.record(db, BACKUP_WEEKLY_JOB_ID) as h:
+            job = backup_service.create_backup(
+                db, kind=BACKUP_KIND_WEEKLY, user_id=None,
+                notes="Auto weekly backup + cloud",
+                push_cloud=True,
+            )
+            h.detail = f"job_id={job.id} size={job.size_bytes}"
+    except Exception as e:  # pragma: no cover
+        logger.exception("Weekly backup tick failed: {}", e)
+    finally:
+        db.close()
+
+
+def refresh_backup_schedule() -> None:
+    """Read backup settings from the DB and (re)install the daily +
+    weekly cron jobs. Called on startup and again after the admin
+    saves the Backup settings card."""
+    if _scheduler is None:
+        return
+    from app.db.session import SessionLocal
+    from app.services import settings_service
+
+    db = SessionLocal()
+    try:
+        daily_enabled = settings_service.get_bool(db, "backup.daily_enabled", False)
+        daily_time = settings_service.get_str(db, "backup.daily_time", "23:00")
+        weekly_enabled = settings_service.get_bool(db, "backup.weekly_enabled", False)
+        weekly_day = settings_service.get_str(db, "backup.weekly_day", "Sunday")
+        weekly_time = settings_service.get_str(db, "backup.weekly_time", "23:30")
+    finally:
+        db.close()
+
+    # Drop existing cron jobs (if any) before re-adding so changes
+    # take effect without a server restart.
+    for jid in (BACKUP_DAILY_JOB_ID, BACKUP_WEEKLY_JOB_ID):
+        try:
+            _scheduler.remove_job(jid)
+        except Exception:
+            pass
+
+    if daily_enabled:
+        try:
+            h, m = (int(p) for p in daily_time.split(":"))
+            _scheduler.add_job(
+                _backup_daily_tick,
+                CronTrigger(hour=h, minute=m, timezone="UTC"),
+                id=BACKUP_DAILY_JOB_ID,
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
+            logger.info("Daily backup armed for {:02d}:{:02d} UTC", h, m)
+        except Exception as e:  # pragma: no cover
+            logger.warning("Bad daily_time '{}': {}", daily_time, e)
+
+    if weekly_enabled:
+        dow = _WEEKDAY_TO_CRON.get(weekly_day, "sun")
+        try:
+            h, m = (int(p) for p in weekly_time.split(":"))
+            _scheduler.add_job(
+                _backup_weekly_tick,
+                CronTrigger(day_of_week=dow, hour=h, minute=m, timezone="UTC"),
+                id=BACKUP_WEEKLY_JOB_ID,
+                replace_existing=True,
+                max_instances=1,
+                coalesce=True,
+            )
+            logger.info(
+                "Weekly backup armed for {} {:02d}:{:02d} UTC", dow, h, m
+            )
+        except Exception as e:  # pragma: no cover
+            logger.warning("Bad weekly_time '{}': {}", weekly_time, e)
+
+
 def known_job_ids() -> list[str]:
     """List of every tick the scheduler manages.
 
     Returns a fixed list so the admin page renders predictably even
     before the scheduler has started (e.g. in the test client).
     """
-    return [TICK_JOB_ID, EMAIL_QUEUE_JOB_ID, SLA_JOB_ID, HEARING_JOB_ID]
+    return [
+        TICK_JOB_ID,
+        EMAIL_QUEUE_JOB_ID,
+        SLA_JOB_ID,
+        HEARING_JOB_ID,
+        BACKUP_DAILY_JOB_ID,
+        BACKUP_WEEKLY_JOB_ID,
+    ]
 
 
 def job_interval_seconds(job_id: str) -> int | None:
