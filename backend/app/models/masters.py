@@ -202,3 +202,26 @@ class CaseType(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(String(300), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+
+# Phase 41: master list of physical-document storage locations.
+# Used by the PhysicalDocument chain-of-custody log so reports
+# like "files in Cabinet A-3" or "files at Legal Office Safe"
+# stay searchable without parsing free-text. Free-text destinations
+# are still allowed on each transfer (e.g. courier address) via
+# ``location_text`` on the custody log row.
+class DocumentLocation(Base, TimestampMixin):
+    __tablename__ = "document_locations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Where in the building / which office. Free-text so the
+    # operator can write "Ground floor, behind Reception" etc.
+    description: Mapped[str] = mapped_column(String(500), default="")
+    # When true the location is treated as "in storage" for the
+    # overdue-days calculation: a document that's been "with a
+    # person" for >N days raises the report, but one parked in
+    # storage doesn't.
+    is_storage: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)

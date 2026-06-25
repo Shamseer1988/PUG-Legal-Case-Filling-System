@@ -23,11 +23,13 @@ from app.models.masters import (
     Customer,
     CustomerPartner,
     Division,
+    DocumentLocation,
     Lawyer,
     LawyerDivisionMap,
     Salesman,
 )
 from app.models.notification import EmailLog, EmailLogAttachment, Notification
+from app.models.physical_document import DocumentCustodyLog, PhysicalDocument
 from app.models.push import PushSubscription
 from app.models.saved_filter import SavedReportFilter
 from app.models.scheduled_report import ScheduledReport, ScheduledReportRun
@@ -45,6 +47,9 @@ __all__ = [
     "Customer",
     "CustomerPartner",
     "CaseChequeSignatory",
+    "DocumentLocation",
+    "PhysicalDocument",
+    "DocumentCustodyLog",
     "Lawyer",
     "LawyerDivisionMap",
     "CaseType",

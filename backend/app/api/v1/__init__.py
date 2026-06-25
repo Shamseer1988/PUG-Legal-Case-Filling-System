@@ -17,6 +17,7 @@ from app.api.v1 import (
     jobs,
     masters,
     notifications,
+    physical_documents,
     push,
     reports,
     roles,
@@ -50,3 +51,4 @@ api_router.include_router(settings_router.router)
 api_router.include_router(diagnostics.router)
 api_router.include_router(dashboard.router)
 api_router.include_router(jobs.router)
+api_router.include_router(physical_documents.router)

@@ -17,6 +17,7 @@ from app.models.masters import (
     Customer,
     CustomerPartner,
     Division,
+    DocumentLocation,
     Lawyer,
     LawyerDivisionMap,
     Salesman,
@@ -38,6 +39,9 @@ from app.schemas.masters import (
     DivisionCreate,
     DivisionRead,
     DivisionUpdate,
+    DocumentLocationCreate,
+    DocumentLocationRead,
+    DocumentLocationUpdate,
     LawyerCreate,
     LawyerRead,
     LawyerUpdate,
@@ -322,6 +326,17 @@ _register(
     create_schema=CaseTypeCreate,
     update_schema=CaseTypeUpdate,
     order_by=CaseType.code,
+    unique_field="code",
+)
+# Phase 41: physical-document storage locations.
+_register(
+    router,
+    path="/document-locations",
+    model=DocumentLocation,
+    read_schema=DocumentLocationRead,
+    create_schema=DocumentLocationCreate,
+    update_schema=DocumentLocationUpdate,
+    order_by=DocumentLocation.code,
     unique_field="code",
 )
 

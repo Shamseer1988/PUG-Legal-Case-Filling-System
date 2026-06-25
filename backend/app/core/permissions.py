@@ -36,6 +36,10 @@ EXPENSES_REQUEST = "expenses:request"
 EXPENSES_APPROVE = "expenses:approve"
 EXPENSES_PAY = "expenses:pay"
 
+# Phase 41: physical document chain of custody
+DOCUMENTS_READ = "documents:read"
+DOCUMENTS_TRANSFER = "documents:transfer"
+
 # Admin
 ADMIN_SETTINGS = "admin:settings"
 ADMIN_BACKUP = "admin:backup"
@@ -50,22 +54,27 @@ ROLE_PRESETS: dict[str, list[str]] = {
         CASES_READ,
         EXPENSES_PAY,
         MASTERS_READ,
+        DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
     "Sales Manager": [
         CASES_READ,
         CASES_APPROVE_SALES_MGR,
         MASTERS_READ,
+        DOCUMENTS_READ,
     ],
     "Division Manager": [
         CASES_READ,
         CASES_APPROVE_DIV_MGR,
         MASTERS_READ,
+        DOCUMENTS_READ,
     ],
     "Auditor": [
         CASES_READ,
         CASES_APPROVE_AUDIT,
         ADMIN_AUDIT_LOG,
         MASTERS_READ,
+        DOCUMENTS_READ,
     ],
     "Finance Manager": [
         CASES_READ,
@@ -73,16 +82,19 @@ ROLE_PRESETS: dict[str, list[str]] = {
         CASES_SIGNED_FORM,
         EXPENSES_APPROVE,
         MASTERS_READ,
+        DOCUMENTS_READ,
     ],
     "Executive Director": [
         CASES_READ,
         CASES_APPROVE_ED,
         MASTERS_READ,
+        DOCUMENTS_READ,
     ],
     "Chairman / MD": [
         CASES_READ,
         CASES_APPROVE_FINAL,
         MASTERS_READ,
+        DOCUMENTS_READ,
     ],
     "Lawyer": [
         CASES_READ,
@@ -92,6 +104,8 @@ ROLE_PRESETS: dict[str, list[str]] = {
         HEARINGS_WRITE,
         EXPENSES_REQUEST,
         MASTERS_READ,
+        DOCUMENTS_READ,
+        DOCUMENTS_TRANSFER,
     ],
 }
 
@@ -137,6 +151,7 @@ MENU_MASTERS_CUSTOMERS = "masters.customers"
 MENU_MASTERS_SALESMEN = "masters.salesmen"
 MENU_MASTERS_LAWYERS = "masters.lawyers"
 MENU_MASTERS_CASE_TYPES = "masters.case_types"
+MENU_MASTERS_DOCUMENT_LOCATIONS = "masters.document_locations"
 MENU_ADMIN_USERS = "admin.users"
 MENU_ADMIN_ROLES = "admin.roles"
 MENU_ADMIN_EMAIL_LOG = "admin.email_log"
@@ -170,6 +185,7 @@ _ALL_MASTERS = [
     MENU_MASTERS_SALESMEN,
     MENU_MASTERS_LAWYERS,
     MENU_MASTERS_CASE_TYPES,
+    MENU_MASTERS_DOCUMENT_LOCATIONS,
 ]
 
 _FULL_ADMIN_MENUS = [
@@ -215,6 +231,7 @@ ROLE_CAPABILITIES: dict[str, dict] = {
             MENU_CASES, MENU_APPROVALS, MENU_HEARINGS, MENU_CASH_REQUESTS,
             MENU_REPORTS,
             MENU_MASTERS_CUSTOMERS, MENU_MASTERS_BANKS, MENU_MASTERS_SALESMEN,
+            MENU_MASTERS_DOCUMENT_LOCATIONS,
         ],
         "actions": [
             ACTION_CASE_CREATE,
