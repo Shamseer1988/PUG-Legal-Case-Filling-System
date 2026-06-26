@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Callable
 
-from sqlalchemy import func
+from sqlalchemy import false as sa_false, func
 from sqlalchemy.orm import Session
 
 from app.models.case import Case, CaseAttachment, CaseStatusUpdate, Cheque
@@ -44,16 +44,30 @@ class ReportDef:
 
 
 # ===================== helpers =====================
+def _user_can_see_all_divisions(user: User) -> bool:
+    """True when the user has unrestricted division access.
+
+    Super-users and anyone with the global ``*`` permission bypass
+    division scoping; everyone else is filtered to their assigned
+    divisions (and gets an *empty* result when they have none — never
+    the full company dataset).
+    """
+    if user.is_super:
+        return True
+    perms = user.role.permissions if user.role else []
+    return "*" in perms
+
+
 def _scope_cases(db: Session, user: User):
     q = db.query(Case)
-    if user.is_super:
+    if _user_can_see_all_divisions(user):
         return q
-    perms = user.role.permissions if user.role else []
-    if "*" in perms:
-        return q
-    if user.divisions:
-        q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
-    return q
+    if not user.divisions:
+        # No divisions => no visibility. Force an empty result rather
+        # than silently dropping the filter (which would leak the
+        # entire dataset to a misconfigured account).
+        return q.filter(sa_false())
+    return q.filter(Case.division_id.in_([d.id for d in user.divisions]))
 
 
 def _apply_common_filters(q, params: dict[str, Any]):
@@ -267,9 +281,10 @@ def hearing_schedule(db: Session, user: User, params: dict[str, Any]) -> dict[st
         .join(Case, Case.id == Hearing.case_id)
         .order_by(Hearing.hearing_date.asc())
     )
-    if not user.is_super:
-        perms = user.role.permissions if user.role else []
-        if "*" not in perms and user.divisions:
+    if not _user_can_see_all_divisions(user):
+        if not user.divisions:
+            q = q.filter(sa_false())
+        else:
             q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
     div = params.get("division_id")
     if div:
@@ -333,9 +348,10 @@ def expense_report(db: Session, user: User, params: dict[str, Any]) -> dict[str,
         .join(Case, Case.id == CashRequest.case_id)
         .order_by(CashRequest.id.desc())
     )
-    if not user.is_super:
-        perms = user.role.permissions if user.role else []
-        if "*" not in perms and user.divisions:
+    if not _user_can_see_all_divisions(user):
+        if not user.divisions:
+            q = q.filter(sa_false())
+        else:
             q = q.filter(Case.division_id.in_([d.id for d in user.divisions]))
     div = params.get("division_id")
     if div:

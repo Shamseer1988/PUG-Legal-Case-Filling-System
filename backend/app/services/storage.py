@@ -19,10 +19,15 @@ import shutil
 import uuid
 from pathlib import Path
 
-from fastapi import UploadFile
+from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
 from app.models.case import Case
+
+# Hard cap on any uploaded file. The streaming helpers below abort and
+# delete the partial file as soon as the running total exceeds this,
+# so an attacker can't fill the disk by streaming an unbounded body.
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
 
 CASES_SUBDIR = "cases"
 SIGNATURES_SUBDIR = "signatures"
@@ -51,6 +56,35 @@ _SAFE_PATH_RE = re.compile(r"[^A-Za-z0-9_.-]+")
 def _safe_folder(value: str) -> str:
     cleaned = _SAFE_PATH_RE.sub("_", value).strip("._-")
     return cleaned or "untitled"
+
+
+def _stream_to_disk(upload: UploadFile, target: Path) -> int:
+    """Stream an UploadFile to ``target`` in 1MB chunks, enforcing the
+    MAX_UPLOAD_BYTES cap. If the cap is exceeded the partial file is
+    deleted and HTTP 413 is raised. Returns total bytes written.
+    """
+    size = 0
+    with target.open("wb") as out:
+        while True:
+            chunk = upload.file.read(1024 * 1024)
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_UPLOAD_BYTES:
+                out.close()
+                try:
+                    target.unlink()
+                except OSError:
+                    pass
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=(
+                        f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB "
+                        "upload limit."
+                    ),
+                )
+            out.write(chunk)
+    return size
 
 
 def _cases_root() -> Path:
@@ -143,14 +177,7 @@ def save_user_signature(user_id: int, upload: UploadFile) -> tuple[str, int]:
 
     stored = f"{user_id}{ext}"
     target = _signatures_dir() / stored
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
+    size = _stream_to_disk(upload, target)
     return f"{SIGNATURES_SUBDIR}/{stored}", size
 
 
@@ -172,16 +199,7 @@ def save_case_attachment(case: Case, upload: UploadFile) -> tuple[str, int]:
     stored = f"{uuid.uuid4().hex}{ext}"
     target_dir = ensure_case_dir(case)
     target = target_dir / stored
-
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
-
+    size = _stream_to_disk(upload, target)
     return stored, size
 
 
@@ -227,14 +245,7 @@ def save_cheque_attachment(
     ext = Path(original).suffix
     stored = f"{uuid.uuid4().hex}{ext}"
     target = _cheque_dir(case, cheque_id) / stored
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
+    size = _stream_to_disk(upload, target)
     return stored, size
 
 
@@ -264,14 +275,7 @@ def save_transition_attachment(case: Case, upload: UploadFile) -> tuple[str, int
     ext = Path(original).suffix
     stored = f"{uuid.uuid4().hex}{ext}"
     target = _transition_dir(case) / stored
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
+    size = _stream_to_disk(upload, target)
     return stored, size
 
 
@@ -318,14 +322,7 @@ def save_partner_id_document(
             pass
     stored = f"{uuid.uuid4().hex}{ext}"
     target = _partner_dir(partner_id) / stored
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
+    size = _stream_to_disk(upload, target)
     return stored, size
 
 
@@ -365,14 +362,7 @@ def save_custody_signature(
             pass
     stored = f"{uuid.uuid4().hex}{ext}"
     target = _custody_dir(log_id) / stored
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
+    size = _stream_to_disk(upload, target)
     return stored, size
 
 
@@ -406,14 +396,7 @@ def save_custody_acknowledgment(log_id: int, upload: UploadFile) -> tuple[str, i
             pass
     stored = f"{uuid.uuid4().hex}{ext}"
     target = _custody_ack_dir(log_id) / stored
-    size = 0
-    with target.open("wb") as out:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            size += len(chunk)
-            out.write(chunk)
+    size = _stream_to_disk(upload, target)
     return stored, size
 
 

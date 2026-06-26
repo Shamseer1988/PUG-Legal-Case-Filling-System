@@ -3,8 +3,13 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Refuse to boot in production when APP_SECRET_KEY is unset, the dev
+# default, or trivially short. A weak key lets anyone forge JWTs.
+_WEAK_SECRETS = frozenset({"", "change-me", "changeme", "secret", "password"})
+_MIN_PROD_SECRET_LEN = 32
 
 
 class Settings(BaseSettings):
@@ -68,6 +73,18 @@ class Settings(BaseSettings):
     rate_limit_login_per_hour: int = 100
     sentry_dsn: str = ""
     sentry_traces_sample_rate: float = 0.0
+
+    @model_validator(mode="after")
+    def _enforce_strong_prod_secret(self) -> "Settings":
+        if (self.app_env or "").lower() == "production":
+            sec = (self.app_secret_key or "").strip()
+            if sec.lower() in _WEAK_SECRETS or len(sec) < _MIN_PROD_SECRET_LEN:
+                raise ValueError(
+                    "APP_SECRET_KEY must be set to a strong random value "
+                    f"(>= {_MIN_PROD_SECRET_LEN} chars) when APP_ENV=production. "
+                    "Generate one with: python -c 'import secrets; print(secrets.token_urlsafe(48))'"
+                )
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:
