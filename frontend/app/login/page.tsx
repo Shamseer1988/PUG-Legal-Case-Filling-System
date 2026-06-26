@@ -160,10 +160,6 @@ export default function LoginPage() {
               {busy ? 'Signing in...' : needsTotp ? 'Verify & Sign in' : 'Sign in'}
             </button>
           </form>
-
-          <p className="mt-8 text-center text-[10px] text-slate-500">
-            Default admin (seed): <code className="text-slate-400 bg-white/5 px-1 py-0.5 rounded">admin@pug.local</code> / <code className="text-slate-400 bg-white/5 px-1 py-0.5 rounded">Admin@123</code>
-          </p>
         </div>
       </div>
     </div>
