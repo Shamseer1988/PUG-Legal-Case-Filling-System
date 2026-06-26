@@ -47,6 +47,12 @@ def _ts() -> list[sa.Column]:
 
 def upgrade() -> None:
     with op.batch_alter_table("backup_jobs") as batch:
+        # Add the column with a temporary "legacy_enc" default so the
+        # backfill on existing pre-Phase-42 rows tags them correctly
+        # (they were openssl-encrypted .enc bundles). We flip the
+        # default to "pgdump" immediately after the batch closes so
+        # any NEW inserts match the model default and the restore
+        # dispatcher routes them through the pg_restore path.
         batch.add_column(
             sa.Column(
                 "format",
@@ -71,6 +77,8 @@ def upgrade() -> None:
                 server_default="",
             )
         )
+
+    op.execute("ALTER TABLE backup_jobs ALTER COLUMN format SET DEFAULT 'pgdump'")
 
     op.create_table(
         "backup_activity_log",

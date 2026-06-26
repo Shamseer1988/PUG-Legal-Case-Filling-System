@@ -279,7 +279,10 @@ def request_clarification(
     # Determine which stage to direct the clarification at.
     target = clarify_from_stage or STAGE_ACCOUNTANT
 
-    # Non-Accountant targets must be strictly below the current stage.
+    # Accountant has no approval-stage SLA (it's a draft-side stage),
+    # so cfg stays None for that target. Approval-stage targets must
+    # resolve to a real stage config so the SLA hours land on the case.
+    target_cfg = None
     if target != STAGE_ACCOUNTANT:
         target_cfg = get_stage(target)
         if not target_cfg:
@@ -292,7 +295,7 @@ def request_clarification(
     from_status, from_stage = case.status, case.current_stage
     case.status = CASE_STATUS_CLARIFICATION
     case.clarify_from_stage = target
-    _set_stage(case, target, None)
+    _set_stage(case, target, target_cfg)
     _log(
         db,
         case,

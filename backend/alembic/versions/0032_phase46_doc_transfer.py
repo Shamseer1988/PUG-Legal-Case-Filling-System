@@ -59,15 +59,22 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # COALESCE protects the column when the role held ONLY this
+    # permission - PG's json_agg returns NULL on empty input, which
+    # would otherwise corrupt the JSON column and crash every
+    # permission check on read.
     for role_name in _ROLES:
         op.execute(
             sa.text(
                 """
                 UPDATE roles
-                SET permissions = (
-                    SELECT json_agg(elem)::text
-                    FROM json_array_elements_text(permissions::json) AS elem
-                    WHERE elem <> :perm
+                SET permissions = COALESCE(
+                    (
+                        SELECT json_agg(elem)::text
+                        FROM json_array_elements_text(permissions::json) AS elem
+                        WHERE elem <> :perm
+                    ),
+                    '[]'
                 )
                 WHERE name = :name
                   AND is_system = true

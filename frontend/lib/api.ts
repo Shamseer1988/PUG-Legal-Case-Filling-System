@@ -14,8 +14,23 @@ export class ApiError extends Error {
   }
 }
 
+/** Wipe the auth store and bounce the browser to /login. Safe to call
+ *  multiple times (the early-return short-circuits repeat redirects). */
+function forceLogin(): void {
+  try {
+    useAuthStore.getState().clear();
+  } catch {
+    /* zustand teardown - ignore */
+  }
+  if (typeof window === 'undefined') return;
+  const cur = window.location.pathname;
+  if (cur === '/login' || cur.startsWith('/login')) return;
+  const next = encodeURIComponent(cur + window.location.search);
+  window.location.replace(`/login?next=${next}`);
+}
+
 async function refreshAccessToken(): Promise<string | null> {
-  const { refreshToken, setTokens, clear } = useAuthStore.getState();
+  const { refreshToken, setTokens } = useAuthStore.getState();
   if (!refreshToken) return null;
   try {
     const r = await fetch(`${API_BASE}/api/v1/auth/refresh`, {
@@ -23,15 +38,11 @@ async function refreshAccessToken(): Promise<string | null> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
-    if (!r.ok) {
-      clear();
-      return null;
-    }
+    if (!r.ok) return null;
     const data = await r.json();
     setTokens(data.access_token, data.refresh_token);
     return data.access_token as string;
   } catch {
-    clear();
     return null;
   }
 }
@@ -42,32 +53,59 @@ type Options = {
   auth?: boolean;
 };
 
-export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
-  const { method = 'GET', body, auth = true } = opts;
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (auth) {
-    const token = useAuthStore.getState().accessToken;
-    if (token) headers.Authorization = `Bearer ${token}`;
-  }
-  let res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-    cache: 'no-store',
-  });
+/** Low-level authenticated fetch that handles the 401 -> refresh ->
+ *  retry -> forceLogin flow once. Use this for endpoints that return
+ *  blobs or accept multipart bodies (the json `api()` helper above
+ *  is the right choice for everything else).
+ *
+ *  The caller supplies the full RequestInit so it can set FormData,
+ *  custom Accept headers, etc. We layer the Authorization header on
+ *  top and never set Content-Type (browsers must set it for multipart
+ *  uploads).
+ */
+export async function apiFetch(
+  path: string,
+  init: RequestInit = {},
+  opts: { auth?: boolean } = {},
+): Promise<Response> {
+  const { auth = true } = opts;
+  const withAuth = (token: string | null): RequestInit => {
+    const h = new Headers(init.headers || {});
+    if (token) h.set('Authorization', `Bearer ${token}`);
+    return { ...init, headers: h, cache: 'no-store' };
+  };
+
+  const initialToken = auth ? useAuthStore.getState().accessToken ?? null : null;
+  let res = await fetch(`${API_BASE}${path}`, withAuth(initialToken));
 
   if (res.status === 401 && auth) {
     const newToken = await refreshAccessToken();
     if (newToken) {
-      headers.Authorization = `Bearer ${newToken}`;
-      res = await fetch(`${API_BASE}${path}`, {
-        method,
-        headers,
-        body: body !== undefined ? JSON.stringify(body) : undefined,
-        cache: 'no-store',
-      });
+      res = await fetch(`${API_BASE}${path}`, withAuth(newToken));
+      if (res.status === 401) {
+        forceLogin();
+        throw new ApiError(401, 'Session expired. Please sign in again.');
+      }
+    } else {
+      forceLogin();
+      throw new ApiError(401, 'Session expired. Please sign in again.');
     }
   }
+  return res;
+}
+
+export async function api<T = unknown>(path: string, opts: Options = {}): Promise<T> {
+  const { method = 'GET', body, auth = true } = opts;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const res = await apiFetch(
+    path,
+    {
+      method,
+      headers,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    },
+    { auth },
+  );
 
   if (res.status === 204) {
     return undefined as T;
