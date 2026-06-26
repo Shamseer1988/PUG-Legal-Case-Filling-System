@@ -6,6 +6,7 @@ import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 import { formatBytes } from '@/lib/transitionAttachments';
+import { assertUploadSize } from '@/lib/uploadLimits';
 import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 
 type SignedFormAttachment = {
@@ -73,6 +74,7 @@ export function SignedFormPanel({ caseId, status, onChange }: Props) {
     setErr(null);
     setInfo(null);
     try {
+      assertUploadSize(file);
       const fd = new FormData();
       fd.append('file', file);
       const r = await fetch(`${API_BASE}/api/v1/cases/${caseId}/signed-form`, {

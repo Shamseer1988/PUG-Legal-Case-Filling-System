@@ -4,6 +4,7 @@ import { FileText, Pencil, Plus, Save, Trash2, Upload, Users, X } from 'lucide-r
 import { useCallback, useEffect, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
+import { assertUploadSize } from '@/lib/uploadLimits';
 
 export type Partner = {
   id: number;
@@ -312,6 +313,7 @@ function IdDocCell({
   async function upload(file: File) {
     setBusy(true);
     try {
+      assertUploadSize(file);
       const fd = new FormData();
       fd.append('file', file);
       const res = await fetch(

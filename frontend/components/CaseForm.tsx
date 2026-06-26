@@ -342,6 +342,17 @@ export function CaseForm({ caseId }: { caseId?: number }) {
       return;
     }
 
+    // Phase 40: at least one Customer Partner must be picked as the
+    // cheque signatory before the case can be submitted. Catching it
+    // here instead of waiting for the backend's 400 lets the user
+    // jump straight to the partner picker without re-scrolling the
+    // form.
+    if (thenSubmit && (draft.cheque_signatory_partner_ids ?? []).length === 0) {
+      setErr('Select at least one Customer Partner as the cheque signatory before submitting.');
+      setBusy(false);
+      return;
+    }
+
     try {
       let id = caseId;
       let saved: CaseFull;

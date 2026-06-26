@@ -1,6 +1,7 @@
 'use client';
 
 import { apiFetch } from './api';
+import { assertUploadSize } from './uploadLimits';
 
 export type TransitionAttachment = {
   id: number;
@@ -45,6 +46,7 @@ export async function uploadTransitionAttachment(
   caseId: number,
   file: File,
 ): Promise<TransitionAttachment> {
+  assertUploadSize(file);
   const fd = new FormData();
   fd.append('file', file);
   const r = await apiFetch(`/api/v1/cases/${caseId}/transition-attachments`, {

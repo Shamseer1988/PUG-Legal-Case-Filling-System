@@ -58,6 +58,7 @@ from app.services import (
     storage,
     workflow_service,
 )
+from app.services.upload_validation import validate_upload
 
 router = APIRouter(prefix="/cases", tags=["cases"])
 
@@ -491,6 +492,7 @@ def upload_attachment(
     user: User = Depends(require_permission(CASES_CREATE)),
 ) -> AttachmentRead:
     case = _get_case_or_404(db, user, case_id)
+    validate_upload(file, "case_attachment")
     stored, size = storage.save_case_attachment(case, file)
     att = CaseAttachment(
         case_id=case.id,
@@ -608,6 +610,7 @@ def upload_cheque_attachment(
     """
     case = _get_case_or_404(db, user, case_id)
     cheque = _cheque_or_404(db, case, cheque_id)
+    validate_upload(file, "cheque_attachment")
 
     # Buffer + persist so we can both stream to disk and feed OCR
     # without re-reading from the upload's tempfile.
@@ -886,6 +889,7 @@ def upload_transition_attachment(
             status_code=403,
             detail=f"Not authorised to act at stage '{case.current_stage}'",
         )
+    validate_upload(file, "transition_attachment")
     stored, size = storage.save_transition_attachment(case, file)
     att = CaseTransitionAttachment(
         case_id=case.id,
@@ -1031,6 +1035,7 @@ def upload_signed_form(
     document is the expected workflow when the form is re-signed.
     """
     case = _get_case_or_404(db, user, case_id)
+    validate_upload(file, "signed_form")
 
     stored, size = storage.save_case_attachment(case, file)
     new_att = CaseAttachment(

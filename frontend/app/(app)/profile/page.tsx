@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PushOptInCard } from '@/components/PushOptInCard';
 import { api, ApiError, API_BASE } from '@/lib/api';
 import { useAuthStore, type Me } from '@/lib/auth';
+import { assertUploadSize, MAX_IMAGE_BYTES } from '@/lib/uploadLimits';
 import {
   LOCALE_LABELS,
   SUPPORTED_LOCALES,
@@ -159,6 +160,7 @@ export default function ProfilePage() {
     setSigInfo(null);
     setSigBusy(true);
     try {
+      assertUploadSize(file, MAX_IMAGE_BYTES);
       const fd = new FormData();
       fd.append('file', file);
       const r = await fetch(`${API_BASE}/api/v1/auth/me/signature`, {

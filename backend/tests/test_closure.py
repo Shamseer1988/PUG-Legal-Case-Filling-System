@@ -170,9 +170,10 @@ def test_close_before_approval_rejected(client: TestClient) -> None:
 def test_attachments_zip(client: TestClient) -> None:
     h = _login(client)
     case = _approved_case(client, h)
-    # Upload two attachments
-    for name in ("a.txt", "b.txt"):
-        files = {"file": (name, io.BytesIO(b"hello " + name.encode()), "text/plain")}
+    # Upload two attachments (PDF with the real magic prefix so the
+    # upload-validation gate accepts them).
+    for name in ("a.pdf", "b.pdf"):
+        files = {"file": (name, io.BytesIO(b"%PDF-1.4 hello " + name.encode()), "application/pdf")}
         r = client.post(
             f"/api/v1/cases/{case['id']}/attachments",
             headers=h,
@@ -187,8 +188,8 @@ def test_attachments_zip(client: TestClient) -> None:
     zf = zipfile.ZipFile(io.BytesIO(r.content))
     names = zf.namelist()
     assert "manifest.tsv" in names
-    assert "a.txt" in names
-    assert "b.txt" in names
+    assert "a.pdf" in names
+    assert "b.pdf" in names
 
 
 def test_case_cash_flow_report(client: TestClient) -> None:

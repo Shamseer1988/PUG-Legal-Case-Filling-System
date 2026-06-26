@@ -164,7 +164,7 @@ def test_cheque_attachment_upload_drops_is_bank_return_form_param(client) -> Non
     r = c.post(
         f"/api/v1/cases/{case['id']}/cheques/{cheque_id}/attachments",
         headers=h,
-        files={"file": ("cheque.pdf", b"%PDF", "application/pdf")},
+        files={"file": ("cheque.pdf", b"%PDF-1.4", "application/pdf")},
     )
     assert r.status_code == 201, r.text
     # All cheque-row uploads are cheque copies now, not bank letters.
@@ -314,7 +314,7 @@ def test_patch_with_missing_cheque_id_deletes_the_row(client) -> None:
     up = c.post(
         f"/api/v1/cases/{case_id}/cheques/{cheque_id}/attachments",
         headers=h,
-        files={"file": ("scan.pdf", b"%PDF", "application/pdf")},
+        files={"file": ("scan.pdf", b"%PDF-1.4", "application/pdf")},
     )
     att_id = up.json()["attachment"]["id"]
 

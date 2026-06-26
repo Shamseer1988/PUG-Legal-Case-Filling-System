@@ -4,6 +4,7 @@ import { CheckSquare, Download, Eye, Paperclip, Square, Trash2 } from 'lucide-re
 import { useMemo, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
+import { assertUploadSize } from '@/lib/uploadLimits';
 import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 
 /**
@@ -83,6 +84,7 @@ export function CategorizedAttachments({
     try {
       const updated = [...attachments];
       for (const f of Array.from(files)) {
+        assertUploadSize(f);
         const fd = new FormData();
         fd.append('file', f);
         fd.append('category', cat);

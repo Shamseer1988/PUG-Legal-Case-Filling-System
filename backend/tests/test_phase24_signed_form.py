@@ -161,12 +161,12 @@ def test_signed_form_replace_evicts_previous(client) -> None:
     first = c.post(
         f"/api/v1/cases/{case_id}/signed-form",
         headers=h,
-        files={"file": ("v1.pdf", io.BytesIO(b"v1"), "application/pdf")},
+        files={"file": ("v1.pdf", io.BytesIO(b"%PDF-1.4 v1"), "application/pdf")},
     ).json()
     second = c.post(
         f"/api/v1/cases/{case_id}/signed-form",
         headers=h,
-        files={"file": ("v2.pdf", io.BytesIO(b"v2-newer"), "application/pdf")},
+        files={"file": ("v2.pdf", io.BytesIO(b"%PDF-1.4 v2-newer"), "application/pdf")},
     ).json()
     assert first["id"] != second["id"]
 
@@ -190,7 +190,7 @@ def test_signed_form_delete(client) -> None:
     c.post(
         f"/api/v1/cases/{case_id}/signed-form",
         headers=h,
-        files={"file": ("x.pdf", io.BytesIO(b"x"), "application/pdf")},
+        files={"file": ("x.pdf", io.BytesIO(b"%PDF-1.4 x"), "application/pdf")},
     )
     r = c.delete(f"/api/v1/cases/{case_id}/signed-form", headers=h)
     assert r.status_code == 204
@@ -208,7 +208,7 @@ def test_signed_form_upload_blocked_for_unprivileged_role(client) -> None:
     r = c.post(
         f"/api/v1/cases/{case_id}/signed-form",
         headers=sm,
-        files={"file": ("x.pdf", io.BytesIO(b"x"), "application/pdf")},
+        files={"file": ("x.pdf", io.BytesIO(b"%PDF-1.4 x"), "application/pdf")},
     )
     assert r.status_code == 403
 
@@ -227,7 +227,7 @@ def test_signed_form_allowed_for_lawyer_and_fm(client) -> None:
         r = c.post(
             f"/api/v1/cases/{case_id}/signed-form",
             headers=hh,
-            files={"file": (f"by-{email}.pdf", io.BytesIO(b"x"), "application/pdf")},
+            files={"file": (f"by-{email}.pdf", io.BytesIO(b"%PDF-1.4 x"), "application/pdf")},
         )
         assert r.status_code == 201, f"{email}: {r.text}"
 

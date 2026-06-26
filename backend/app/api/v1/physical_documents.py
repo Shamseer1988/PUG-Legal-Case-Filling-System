@@ -52,6 +52,7 @@ from app.schemas.physical_document import (
     TransferRequest,
 )
 from app.services import audit_service, storage
+from app.services.upload_validation import validate_upload
 
 router = APIRouter(tags=["physical-documents"])
 
@@ -367,6 +368,7 @@ def upload_transfer_signature(
         raise HTTPException(status_code=404, detail="Transfer not found")
     # Scope: must be able to see the parent document.
     _scoped_doc_or_404(db, user, log.document_id)
+    validate_upload(file, "image")
 
     if log.signature_stored:
         storage.delete_custody_signature(log.id, log.signature_stored)
@@ -518,6 +520,7 @@ def upload_acknowledgment(
         )
     if not db.get(PhysicalDocument, log.document_id):
         raise HTTPException(status_code=404, detail="Document not found")
+    validate_upload(file, "signed_form")
 
     if log.ack_stored:
         storage.delete_custody_acknowledgment(log.id, log.ack_stored)

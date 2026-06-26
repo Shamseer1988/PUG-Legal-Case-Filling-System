@@ -159,7 +159,7 @@ def test_upload_attachment_clamps_category(client) -> None:
     r2 = c.post(
         f"/api/v1/cases/{case['id']}/attachments",
         headers=h,
-        files={"file": ("misc.txt", b"hello", "text/plain")},
+        files={"file": ("misc.pdf", b"%PDF-1.4\nmisc body", "application/pdf")},
         data={"category": "Free-Form Made-Up"},
     )
     assert r2.status_code == 201, r2.text
@@ -242,7 +242,7 @@ def test_upload_cheque_attachment_without_ocr_engine(client) -> None:
     r = c.post(
         f"/api/v1/cases/{case['id']}/cheques/{cheque_id}/attachments",
         headers=h,
-        files={"file": ("cheque.png", b"PNGDATA", "image/png")},
+        files={"file": ("cheque.png", b"\x89PNG\r\n\x1a\nPNGDATA", "image/png")},
     )
     assert r.status_code == 201, r.text
     body = r.json()

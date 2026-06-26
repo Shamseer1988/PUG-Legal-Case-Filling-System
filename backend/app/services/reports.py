@@ -196,9 +196,12 @@ def aging_report(db: Session, user: User, params: dict[str, Any]) -> dict[str, A
     for label, start, end in buckets:
         q = _apply_common_filters(_scope_cases(db, user), params)
         if start:
-            q = q.filter(Case.created_at > start)
+            # `>=` so a case exactly at the boundary (e.g. 30 days old)
+            # lands in the lower bucket instead of slipping into the
+            # next one.
+            q = q.filter(Case.created_at >= start)
         if end:
-            q = q.filter(Case.created_at <= end)
+            q = q.filter(Case.created_at < end)
         # not closed (unless user explicitly filtered for one of those)
         if not (params.get("status") or "").strip():
             q = q.filter(Case.status.notin_(["Closed", "Rejected"]))
@@ -226,34 +229,52 @@ def aging_report(db: Session, user: User, params: dict[str, Any]) -> dict[str, A
 
 # ===================== Division-wise Summary =====================
 def division_summary(db: Session, user: User, params: dict[str, Any]) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = []
+    # One GROUP BY instead of one query per division. Counts are
+    # produced server-side with conditional sums, then joined to the
+    # division name map in Python.
+    from sqlalchemy import case as sa_case
+
     divisions = _division_map(db)
-    # The standalone ``division_id`` filter narrows to a single row.
-    requested_div = params.get("division_id")
-    for div_id, div_name in divisions.items():
-        if requested_div:
-            try:
-                if int(requested_div) != div_id:
-                    continue
-            except (TypeError, ValueError):
-                pass
-        q = _apply_common_filters(
-            _scope_cases(db, user).filter(Case.division_id == div_id), params
+
+    base = _apply_common_filters(_scope_cases(db, user), params)
+    is_open = sa_case((Case.status.notin_(("Closed", "Rejected")), 1), else_=0)
+    is_done = sa_case((Case.status.in_(("Approved", "Filed")), 1), else_=0)
+    grouped = (
+        base.with_entities(
+            Case.division_id,
+            func.count(Case.id).label("total"),
+            func.coalesce(func.sum(is_open), 0).label("open"),
+            func.coalesce(func.sum(is_done), 0).label("done"),
+            func.coalesce(func.sum(Case.legal_filing_amount), 0).label("amount"),
         )
-        cases = q.all()
+        .group_by(Case.division_id)
+        .all()
+    )
+
+    # When a single division is requested, narrow the rendered output
+    # (the SQL above already honours any division filter applied via
+    # _apply_common_filters, so this is just a safety net).
+    requested_div = params.get("division_id")
+    requested_id: int | None = None
+    if requested_div:
+        try:
+            requested_id = int(requested_div)
+        except (TypeError, ValueError):
+            requested_id = None
+
+    rows: list[dict[str, Any]] = []
+    for div_id, total, open_, done, amount in grouped:
+        if div_id is None:
+            continue
+        if requested_id is not None and div_id != requested_id:
+            continue
         rows.append(
             {
-                "division": div_name,
-                "total_cases": len(cases),
-                "open_cases": sum(
-                    1
-                    for c in cases
-                    if c.status not in ("Closed", "Rejected")
-                ),
-                "approved_cases": sum(1 for c in cases if c.status in ("Approved", "Filed")),
-                "total_legal_amount": sum(
-                    (c.legal_filing_amount or Decimal("0") for c in cases), Decimal("0")
-                ),
+                "division": divisions.get(div_id, ""),
+                "total_cases": int(total or 0),
+                "open_cases": int(open_ or 0),
+                "approved_cases": int(done or 0),
+                "total_legal_amount": Decimal(str(amount or 0)),
             }
         )
     rows.sort(key=lambda r: -float(r["total_legal_amount"]))
@@ -473,8 +494,18 @@ def case_cash_flow(db: Session, user: User, params: dict[str, Any]) -> dict[str,
             }
         )
 
-    # 4. Court filing
+    # 4. Court filing  (batched: one round-trip for filing + hearings + cash requests)
     filing = db.query(CourtFiling).filter(CourtFiling.case_id == case.id).first()
+    hearings = (
+        db.query(Hearing).filter(Hearing.case_id == case.id).order_by(Hearing.id).all()
+    )
+    crs = (
+        db.query(CashRequest)
+        .filter(CashRequest.case_id == case.id)
+        .order_by(CashRequest.id)
+        .all()
+    )
+    closure = db.query(CaseClosure).filter(CaseClosure.case_id == case.id).first()
     if filing:
         rows.append(
             {
@@ -495,9 +526,6 @@ def case_cash_flow(db: Session, user: User, params: dict[str, Any]) -> dict[str,
         )
 
     # 5. Hearings (primary date)
-    hearings = (
-        db.query(Hearing).filter(Hearing.case_id == case.id).order_by(Hearing.id).all()
-    )
     for h in hearings:
         rows.append(
             {
@@ -513,12 +541,6 @@ def case_cash_flow(db: Session, user: User, params: dict[str, Any]) -> dict[str,
         )
 
     # 6. Cash requests
-    crs = (
-        db.query(CashRequest)
-        .filter(CashRequest.case_id == case.id)
-        .order_by(CashRequest.id)
-        .all()
-    )
     for cr in crs:
         signed = float(cr.amount or 0)
         rows.append(
@@ -537,7 +559,6 @@ def case_cash_flow(db: Session, user: User, params: dict[str, Any]) -> dict[str,
         )
 
     # 7. Closure
-    closure = db.query(CaseClosure).filter(CaseClosure.case_id == case.id).first()
     if closure:
         rows.append(
             {

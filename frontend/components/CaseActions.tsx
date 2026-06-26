@@ -1,6 +1,7 @@
 'use client';
 
 import { Check, X, AlertTriangle, Gavel, Paperclip, Send, Upload, Trash2 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { api, ApiError } from '@/lib/api';
 import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
@@ -58,6 +59,7 @@ export function CaseActions({
   const [err, setErr] = useState<string | null>(null);
   const [pending, setPending] = useState<TransitionAttachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const router = useRouter();
 
   const caps = useCapabilitiesStore((s) => s.caps);
   const isApprovalStage = !['Accountant', 'Lawyer', 'Closed'].includes(currentStage);
@@ -170,6 +172,12 @@ export function CaseActions({
       setClarifyTarget('Accountant');
       setPending([]);
       onDone();
+      // Force the App Router to re-fetch the case page's server data
+      // so the stage/status pills update from authoritative state,
+      // not the local optimistic reload-key bump in the parent. The
+      // reload-key path is kept as a belt-and-braces refresh of any
+      // client-side data layer the parent might also be using.
+      router.refresh();
     } catch (e) {
       setErr((e as ApiError).message);
     } finally {

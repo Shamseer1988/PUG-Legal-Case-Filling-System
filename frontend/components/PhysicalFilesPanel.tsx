@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
+import { assertUploadSize, MAX_IMAGE_BYTES } from '@/lib/uploadLimits';
 import { useAuthStore } from '@/lib/auth';
 import { useMasterOptions } from '@/lib/useMasters';
 
@@ -623,6 +624,7 @@ function TransferModal({
       if (signature) {
         const logId = detail.custody_log[0]?.id;
         if (logId) {
+          assertUploadSize(signature, MAX_IMAGE_BYTES);
           const fd = new FormData();
           fd.append('file', signature);
           const sig = await fetch(
@@ -815,6 +817,7 @@ function AcceptModal({
         body: { note },
       });
       if (ackFile) {
+        assertUploadSize(ackFile);
         const fd = new FormData();
         fd.append('file', ackFile);
         const res = await fetch(

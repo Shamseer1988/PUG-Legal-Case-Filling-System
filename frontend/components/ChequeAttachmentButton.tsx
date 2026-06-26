@@ -11,6 +11,7 @@ import {
 import { useEffect, useRef, useState } from 'react';
 import { API_BASE, api, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
+import { assertUploadSize } from '@/lib/uploadLimits';
 import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 
 /**
@@ -113,6 +114,7 @@ export function ChequeAttachmentButton({
     setErr(null);
     setInfo(null);
     try {
+      assertUploadSize(file);
       const fd = new FormData();
       fd.append('file', file);
       const token = useAuthStore.getState().accessToken;
