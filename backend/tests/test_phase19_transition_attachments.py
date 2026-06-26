@@ -166,7 +166,7 @@ def test_transition_rejects_already_bound_attachment(client) -> None:
     up = c.post(
         f"/api/v1/cases/{case_id}/transition-attachments",
         headers=h,
-        files={"file": ("a.txt", io.BytesIO(b"x"), "text/plain")},
+        files={"file": ("a.pdf", io.BytesIO(b"%PDF-1.4 x"), "application/pdf")},
     ).json()
     c.post(
         f"/api/v1/cases/{case_id}/transition",
@@ -190,7 +190,7 @@ def test_delete_unbound_attachment_works_bound_attachment_locked(client) -> None
     up = c.post(
         f"/api/v1/cases/{case_id}/transition-attachments",
         headers=h,
-        files={"file": ("draft.txt", io.BytesIO(b"x"), "text/plain")},
+        files={"file": ("draft.pdf", io.BytesIO(b"%PDF-1.4 draft"), "application/pdf")},
     ).json()
     # Unbound: delete works
     r = c.delete(
@@ -203,7 +203,7 @@ def test_delete_unbound_attachment_works_bound_attachment_locked(client) -> None
     up2 = c.post(
         f"/api/v1/cases/{case_id}/transition-attachments",
         headers=h,
-        files={"file": ("final.txt", io.BytesIO(b"y"), "text/plain")},
+        files={"file": ("final.pdf", io.BytesIO(b"%PDF-1.4 final"), "application/pdf")},
     ).json()
     c.post(
         f"/api/v1/cases/{case_id}/transition",

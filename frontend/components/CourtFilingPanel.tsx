@@ -6,6 +6,7 @@ import { api, API_BASE, ApiError } from '@/lib/api';
 import { useAuthStore } from '@/lib/auth';
 import { ACTION, canDoAction, useCapabilitiesStore } from '@/lib/capabilities';
 import { formatBytes } from '@/lib/transitionAttachments';
+import { assertUploadSize } from '@/lib/uploadLimits';
 import { AttachmentViewerModal } from '@/components/AttachmentViewerModal';
 
 type Filing = {
@@ -100,6 +101,7 @@ export function CourtFilingPanel({ caseId, status, onChange }: Props) {
     setAckBusy(true);
     setErr(null);
     try {
+      assertUploadSize(file);
       const fd = new FormData();
       fd.append('file', file);
       const r = await fetch(
