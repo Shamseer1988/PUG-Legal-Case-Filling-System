@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
 from loguru import logger
 from sqlalchemy.orm import Session
@@ -27,21 +26,78 @@ class CloudUnavailable(RuntimeError):
     silently skipping a cloud push hides data loss."""
 
 
-def _split_bucket_prefix(s3_url: str) -> tuple[str, str]:
-    """``s3://bucket/folder/sub`` -> ``("bucket", "folder/sub")``."""
-    if not s3_url:
+def _split_bucket_prefix(raw: str) -> tuple[str, str]:
+    """Parse the user's bucket/prefix spec.
+
+    Accepts every form the UI labels are ambiguous about:
+        ``s3://bucket/folder/sub`` -> ``("bucket", "folder/sub")``
+        ``bucket/folder/sub``      -> ``("bucket", "folder/sub")``
+        ``bucket``                 -> ``("bucket", "")``
+        empty / whitespace         -> ``("", "")``
+    """
+    if not raw:
         return "", ""
-    p = urlparse(s3_url)
-    bucket = p.netloc
-    prefix = p.path.lstrip("/").rstrip("/")
+    raw = raw.strip()
+    if raw.startswith("s3://"):
+        raw = raw[len("s3://"):]
+    raw = raw.strip("/")
+    if not raw:
+        return "", ""
+    parts = raw.split("/", 1)
+    bucket = parts[0]
+    prefix = parts[1].rstrip("/") if len(parts) > 1 else ""
     return bucket, prefix
+
+
+def _looks_like_endpoint(s: str) -> bool:
+    s = (s or "").lower()
+    return s.startswith("https://") or s.startswith("http://")
+
+
+def _resolve_config(db: Session) -> tuple[str, str, str, str, str]:
+    """Resolve (bucket, prefix, endpoint, access_key, secret_key) from
+    the settings store, tolerating the two common user mistakes:
+
+      1. Putting just ``bucket/prefix`` (no s3:// scheme) into the
+         "Cloud / external folder" or "Offsite S3 URL" field.
+      2. Pasting the provider's HTTPS endpoint into "Offsite S3 URL"
+         instead of into "S3 Endpoint" on the Integrations page.
+
+    Returns empty strings for any piece we couldn't find; the caller
+    decides whether the combination is enough to talk to S3.
+    """
+    cloud_folder = settings_service.get_str(db, "backup.cloud_folder", "")
+    s3_url = settings_service.get_str(db, "backup.offsite_s3_url", "")
+    endpoint = settings_service.get_str(db, "integrations.s3_endpoint", "")
+    access_key = settings_service.get_str(db, "backup.offsite_s3_access_key", "")
+    secret_key = settings_service.get_str(db, "backup.offsite_s3_secret_key", "")
+
+    # Endpoint resolution: prefer the dedicated field. If unset, pick
+    # whichever of cloud_folder / offsite_s3_url *looks* like an HTTPS
+    # URL (a common user mistake worth recovering from).
+    if not endpoint:
+        for candidate in (s3_url, cloud_folder):
+            if _looks_like_endpoint(candidate):
+                endpoint = candidate
+                break
+
+    # Bucket/prefix resolution: prefer cloud_folder (clearly labelled),
+    # fall back to offsite_s3_url. Skip either if it actually contains
+    # the endpoint URL we just picked.
+    bucket_source = ""
+    for candidate in (cloud_folder, s3_url):
+        if candidate and not _looks_like_endpoint(candidate):
+            bucket_source = candidate
+            break
+    bucket, prefix = _split_bucket_prefix(bucket_source)
+    return bucket, prefix, endpoint, access_key, secret_key
 
 
 def _client_from_settings(db: Session) -> tuple[Any, str, str, str]:
     """Build a boto3 S3 client targeting the configured R2 endpoint.
 
     Returns (client, bucket, prefix, endpoint). Raises ``CloudUnavailable``
-    on any missing piece.
+    on any missing piece, naming the exact field the operator should fix.
     """
     try:
         import boto3  # type: ignore[import-not-found]
@@ -52,22 +108,27 @@ def _client_from_settings(db: Session) -> tuple[Any, str, str, str]:
             "and restart the backend to enable off-site cloud backups."
         ) from e
 
-    s3_url = settings_service.get_str(db, "backup.offsite_s3_url", "")
-    access_key = settings_service.get_str(db, "backup.offsite_s3_access_key", "")
-    secret_key = settings_service.get_str(db, "backup.offsite_s3_secret_key", "")
-    endpoint = settings_service.get_str(db, "integrations.s3_endpoint", "")
-    if not all([s3_url, access_key, secret_key, endpoint]):
-        raise CloudUnavailable(
-            "Cloud destination not configured. Set Cloud provider + folder "
-            "on the Backup settings card and S3 access/secret/endpoint in "
-            "Integrations."
-        )
+    bucket, prefix, endpoint, access_key, secret_key = _resolve_config(db)
 
-    bucket, prefix = _split_bucket_prefix(s3_url)
+    missing: list[str] = []
     if not bucket:
+        missing.append(
+            "'Cloud / external folder' on the Backup Policy card "
+            "(e.g. 'pugfinapp/legal-backup' or 's3://pugfinapp/legal-backup')"
+        )
+    if not endpoint:
+        missing.append(
+            "'S3 Endpoint' on the Integrations card "
+            "(e.g. 'https://<account-id>.r2.cloudflarestorage.com')"
+        )
+    if not access_key:
+        missing.append("'Offsite S3 Access Key' on the Backup Policy card")
+    if not secret_key:
+        missing.append("'Offsite S3 Secret Key' on the Backup Policy card")
+
+    if missing:
         raise CloudUnavailable(
-            f"Cloud / external folder is invalid: '{s3_url}'. "
-            f"Expected an S3 URL like s3://my-bucket/legal-backups."
+            "Cloud destination not configured. Missing: " + "; ".join(missing) + "."
         )
 
     client = boto3.client(
@@ -83,15 +144,8 @@ def _client_from_settings(db: Session) -> tuple[Any, str, str, str]:
 
 def is_configured(db: Session) -> bool:
     """Cheap check - does NOT touch the network."""
-    return all(
-        settings_service.get_str(db, k, "")
-        for k in (
-            "backup.offsite_s3_url",
-            "backup.offsite_s3_access_key",
-            "backup.offsite_s3_secret_key",
-            "integrations.s3_endpoint",
-        )
-    )
+    bucket, _, endpoint, access_key, secret_key = _resolve_config(db)
+    return bool(bucket and endpoint and access_key and secret_key)
 
 
 def test_connection(db: Session) -> dict[str, Any]:
